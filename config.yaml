@@ -1,0 +1,44 @@
+# ╔══════════════════════════════════════════════════════╗
+# ║          SECONDO CERVELLO  —  config.yaml            ║
+# ╚══════════════════════════════════════════════════════╝
+
+# Where the wiki lives on disk
+vault_dir: "vault"
+
+# Temp dir for uploads (auto-cleaned after processing)
+uploads_tmp: ".tmp_uploads"
+
+# SQLite job state
+db_path: ".state/jobs.db"
+
+# ── Ollama ────────────────────────────────────────────────────────────────────
+ollama_url: "http://localhost:11434"
+
+# Vision model for OCR (requires glm-ocr:latest pulled in Ollama)
+ocr_model: "glm-ocr:latest"
+
+# Text model for wiki enrichment and query (qwen2.5:7b recommended for 8GB VRAM)
+# Alternatives: mistral:7b-instruct, llama3.1:8b, phi4:latest
+llm_model: "qwen2.5:7b-instruct"
+
+# ── OCR ───────────────────────────────────────────────────────────────────────
+ocr:
+  # Parallel pages per batch — RTX 3070 Laptop sweet spot: 2
+  # Lower if you get OOM errors
+  max_concurrency: 2
+
+  # Render resolution — 200 is quality/speed balanced
+  # Use 300 for dense handwritten or small-print documents
+  dpi: 200
+
+  # Max pixel dimension sent to LLM (thumbnail)
+  max_image_dimension: 1800
+
+# ── Wiki ──────────────────────────────────────────────────────────────────────
+wiki:
+  # Max characters of source text sent to LLM for enrichment
+  # Larger = better wiki pages, more tokens, slower
+  max_source_chars: 12000
+
+  # Pages to include in query context
+  context_pages: 6

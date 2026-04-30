@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Secondo Cervello</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+:root {
+  --bg:      #0c0c0f;
+  --surface: #131318;
+  --raised:  #1a1a22;
+  --border:  #27272f;
+  --border2: #343440;
+  --text:    #d4d4dc;
+  --muted:   #6b6b7a;
+  --amber:   #f59e0b;
+  --amber2:  #fbbf24;
+  --green:   #22c55e;
+  --red:     #ef4444;
+  --blue:    #60a5fa;
+  --r:       4px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;display:flex;flex-direction:column}
+
+/* ── Top bar ── */
+#topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:48px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+#logo{font-family:'Syne',sans-serif;font-weight:800;font-size:16px;letter-spacing:-0.5px;color:#fff}
+#logo span{color:var(--amber)}
+#nav{display:flex;gap:2px;margin-left:8px}
+.nav-btn{padding:6px 14px;border:none;background:none;color:var(--muted);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;border-radius:var(--r);transition:all .15s;letter-spacing:0.3px}
+.nav-btn:hover{color:var(--text);background:var(--raised)}
+.nav-btn.active{color:var(--amber);background:rgba(245,158,11,.1)}
+#status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);margin-left:auto;transition:background .3s}
+#status-dot.ok{background:var(--green)}
+#status-dot.err{background:var(--red)}
+#status-label{color:var(--muted);font-size:11px}
+
+/* ── Main layout ── */
+#main{display:flex;flex:1;overflow:hidden}
+
+/* ── Panels ── */
+.panel{display:none;flex:1;overflow:hidden;flex-direction:column}
+.panel.active{display:flex}
+
+/* ── Upload panel ── */
+#panel-upload{align-items:center;justify-content:center;gap:32px;padding:40px}
+#drop-zone{width:100%;max-width:560px;border:2px dashed var(--border2);border-radius:8px;padding:60px 40px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+#drop-zone:hover,#drop-zone.drag{border-color:var(--amber);background:rgba(245,158,11,.04)}
+#drop-zone .icon{font-size:36px;margin-bottom:16px;opacity:.5}
+#drop-zone h2{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:#fff;margin-bottom:8px}
+#drop-zone p{color:var(--muted);font-size:12px;line-height:1.6}
+#drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file-types{display:flex;gap:8px;margin-top:20px;justify-content:center}
+.badge{padding:3px 10px;border:1px solid var(--border2);border-radius:999px;font-size:11px;color:var(--muted)}
+
+/* ── Queue panel ── */
+#panel-queue{padding:0}
+#queue-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0}
+#queue-header h2{font-family:'Syne',sans-serif;font-size:14px;font-weight:700}
+#queue-list{flex:1;overflow-y:auto;padding:12px}
+
+.job-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:8px;transition:border-color .2s}
+.job-card.running{border-color:rgba(245,158,11,.4)}
+.job-card.done{border-color:rgba(34,197,94,.25)}
+.job-card.failed{border-color:rgba(239,68,68,.25)}
+.job-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.job-name{font-weight:500;color:#fff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-status{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:500}
+.job-status.queued  {background:rgba(107,107,122,.15);color:var(--muted)}
+.job-status.running {background:rgba(245,158,11,.15);color:var(--amber)}
+.job-status.done    {background:rgba(34,197,94,.12);color:var(--green)}
+.job-status.failed  {background:rgba(239,68,68,.12);color:var(--red)}
+.job-step{color:var(--muted);font-size:11px;margin-bottom:8px}
+.progress-bar{height:2px;background:var(--raised);border-radius:1px;overflow:hidden}
+.progress-fill{height:100%;background:var(--amber);transition:width .3s;border-radius:1px}
+.job-log{margin-top:8px;max-height:100px;overflow-y:auto;font-size:11px;color:var(--muted);line-height:1.6}
+.job-log .entry{padding:1px 0}
+.job-log .entry.green{color:var(--green)}
+.job-log .entry.amber{color:var(--amber)}
+.job-log .entry.red{color:var(--red)}
+
+/* ── Wiki panel ── */
+#panel-wiki{flex-direction:row}
+#wiki-tree{width:220px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:8px}
+#wiki-tree h3{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:8px 8px 6px}
+.tree-item{padding:5px 8px 5px 16px;cursor:pointer;border-radius:var(--r);color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .1s}
+.tree-item:hover{color:var(--text);background:var(--raised)}
+.tree-item.active{color:var(--amber);background:rgba(245,158,11,.08)}
+.tree-dir{padding:6px 8px 4px;font-size:11px;color:var(--border2);text-transform:uppercase;letter-spacing:0.8px;margin-top:8px}
+#wiki-content{flex:1;overflow-y:auto;padding:32px 40px}
+#wiki-content .md-body{max-width:680px;line-height:1.75}
+.md-body h1{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:#fff;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px}
+.md-body h2{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;color:#fff;margin:24px 0 10px}
+.md-body h3{font-size:14px;font-weight:600;color:var(--text);margin:18px 0 8px}
+.md-body p{margin-bottom:12px;color:var(--text)}
+.md-body code{background:var(--raised);padding:2px 6px;border-radius:3px;font-size:12px}
+.md-body pre{background:var(--raised);padding:16px;border-radius:var(--r);overflow-x:auto;margin:12px 0;border:1px solid var(--border)}
+.md-body pre code{background:none;padding:0}
+.md-body a{color:var(--blue);text-decoration:none}
+.md-body a:hover{text-decoration:underline}
+.md-body ul,
+.md-body ol{margin:8px 0 12px 20px;color:var(--text)}
+.md-body li{margin:4px 0}
+.md-body blockquote{border-left:3px solid var(--amber);padding-left:16px;color:var(--muted);margin:12px 0}
+.md-body table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}
+.md-body th{background:var(--raised);padding:8px 12px;text-align:left;border:1px solid var(--border);color:var(--text)}
+.md-body td{padding:7px 12px;border:1px solid var(--border);color:var(--muted)}
+.wikilink{color:var(--amber2);cursor:pointer;text-decoration:none;border-bottom:1px dashed rgba(251,191,36,.3)}
+.wikilink:hover{border-bottom-color:var(--amber2)}
+#wiki-empty{color:var(--muted);text-align:center;padding:60px 20px;font-size:13px}
+#wiki-empty .big{font-size:36px;margin-bottom:12px;opacity:.3}
+
+/* ── Query panel ── */
+#panel-query{flex-direction:column}
+#query-header{padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:12px}
+#query-header h2{font-family:'Syne',sans-serif;font-size:14px;font-weight:700}
+#chat-messages{flex:1;overflow-y:auto;padding:24px 32px;display:flex;flex-direction:column;gap:16px;max-width:800px;width:100%}
+.msg{display:flex;flex-direction:column;gap:4px}
+.msg-meta{font-size:11px;color:var(--muted)}
+.msg-body{padding:12px 16px;border-radius:var(--r);line-height:1.7;font-size:13px}
+.msg.user .msg-body{background:var(--raised);border:1px solid var(--border);color:var(--text);align-self:flex-end;max-width:70%}
+.msg.assistant .msg-body{background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.15);color:var(--text);max-width:90%}
+.msg.assistant .msg-body .md-body{font-size:13px}
+.msg.assistant .msg-body .md-body h1,.msg.assistant .msg-body .md-body h2{font-size:15px;margin:10px 0 6px}
+#chat-input-row{padding:16px 32px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0;max-width:800px;width:100%}
+#chat-input{flex:1;background:var(--raised);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;resize:none;outline:none;transition:border-color .15s}
+#chat-input:focus{border-color:var(--amber)}
+#chat-send{padding:10px 18px;background:var(--amber);border:none;border-radius:var(--r);color:#0c0c0f;font-family:'JetBrains Mono',monospace;font-weight:600;cursor:pointer;font-size:13px;transition:opacity .15s}
+#chat-send:hover{opacity:.85}
+#chat-send:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Dashboard panel ── */
+#panel-dash{overflow-y:auto;padding:32px}
+#dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-width:900px;margin-bottom:32px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px}
+.stat-val{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;color:#fff}
+.stat-val.amber{color:var(--amber)}
+.stat-val.green{color:var(--green)}
+#dash-log{max-width:900px}
+#dash-log h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.log-entry{padding:8px 12px;border-left:2px solid var(--border2);margin-bottom:6px;font-size:12px;color:var(--muted)}
+.log-entry strong{color:var(--text)}
+#lint-section{margin-top:32px;max-width:900px}
+#lint-section h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+#lint-report{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;min-height:60px}
+#lint-btn{padding:8px 16px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:12px;transition:all .15s;margin-bottom:12px}
+#lint-btn:hover{border-color:var(--amber);color:var(--amber)}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--raised);border:1px solid var(--border2);padding:10px 16px;border-radius:var(--r);font-size:12px;opacity:0;transform:translateY(6px);transition:all .2s;pointer-events:none;z-index:999}
+#toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div id="topbar">
+  <div id="logo">secondo<span>cervello</span></div>
+  <nav id="nav">
+    <button class="nav-btn active" data-panel="upload">Upload</button>
+    <button class="nav-btn" data-panel="queue">Queue</button>
+    <button class="nav-btn" data-panel="wiki">Wiki</button>
+    <button class="nav-btn" data-panel="query">Query</button>
+    <button class="nav-btn" data-panel="dash">Dashboard</button>
+  </nav>
+  <div id="status-label">checking…</div>
+  <div id="status-dot"></div>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Upload -->
+  <div id="panel-upload" class="panel active">
+    <div id="drop-zone">
+      <div class="icon">⬆</div>
+      <h2>Drop a document here</h2>
+      <p>The engine will OCR it, extract knowledge, and update the wiki automatically.</p>
+      <div class="file-types">
+        <span class="badge">PDF</span>
+        <span class="badge">TXT</span>
+        <span class="badge">MD</span>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,.txt,.md" multiple/>
+    </div>
+  </div>
+
+  <!-- Queue -->
+  <div id="panel-queue" class="panel">
+    <div id="queue-header">
+      <h2>Processing Queue</h2>
+      <span id="queue-count" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <div id="queue-list"><div style="padding:40px;text-align:center;color:var(--muted)">No jobs yet.</div></div>
+  </div>
+
+  <!-- Wiki -->
+  <div id="panel-wiki" class="panel">
+    <div id="wiki-tree">
+      <h3>Pages</h3>
+      <div id="tree-content"><div style="padding:12px;color:var(--muted);font-size:12px">Empty wiki.</div></div>
+    </div>
+    <div id="wiki-content">
+      <div id="wiki-empty"><div class="big">📂</div>Select a page from the tree.</div>
+    </div>
+  </div>
+
+  <!-- Query -->
+  <div id="panel-query" class="panel">
+    <div id="query-header">
+      <h2>Query the Wiki</h2>
+      <span style="color:var(--muted);font-size:12px">BM25 retrieval + streaming LLM</span>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+      <textarea id="chat-input" rows="2" placeholder="Ask anything about your wiki…"></textarea>
+      <button id="chat-send">Send</button>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="panel-dash" class="panel">
+    <div id="dash-grid">
+      <div class="stat-card"><div class="stat-label">Total Pages</div><div class="stat-val amber" id="s-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Sources</div><div class="stat-val" id="s-sources">—</div></div>
+      <div class="stat-card"><div class="stat-label">Entities</div><div class="stat-val" id="s-entities">—</div></div>
+      <div class="stat-card"><div class="stat-label">Concepts</div><div class="stat-val" id="s-concepts">—</div></div>
+      <div class="stat-card"><div class="stat-label">Jobs Done</div><div class="stat-val green" id="s-done">—</div></div>
+      <div class="stat-card"><div class="stat-label">Jobs Failed</div><div class="stat-val" id="s-failed" style="color:var(--red)">—</div></div>
+    </div>
+    <div id="dash-log">
+      <h3>Recent Activity</h3>
+      <div id="log-entries"></div>
+    </div>
+    <div id="lint-section">
+      <h3>Wiki Health</h3>
+      <button id="lint-btn">Run Lint Check</button>
+      <div id="lint-report" class="md-body" style="color:var(--muted);font-size:12px">Click "Run Lint Check" to inspect the wiki.</div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const BASE = '';
+
+// ── State ──────────────────────────────────────────────────────────────────
+const jobs = {};  // job_id → card data
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
+    if (btn.dataset.panel === 'wiki') loadTree();
+    if (btn.dataset.panel === 'dash') loadStats();
+    if (btn.dataset.panel === 'queue') loadJobs();
+  });
+});
+
+// ── Health check ────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/api/health');
+    const d = await r.json();
+    const dot = document.getElementById('status-dot');
+    const lbl = document.getElementById('status-label');
+    if (d.ollama === 'ok') {
+      dot.className = 'ok';
+      lbl.textContent = 'Ollama connected';
+    } else {
+      dot.className = 'err';
+      lbl.textContent = 'Ollama offline';
+    }
+  } catch {
+    document.getElementById('status-dot').className = 'err';
+    document.getElementById('status-label').textContent = 'Server error';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 30000);
+
+// ── Upload ──────────────────────────────────────────────────────────────────
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  uploadFiles(Array.from(e.dataTransfer.files));
+});
+fileInput.addEventListener('change', () => {
+  uploadFiles(Array.from(fileInput.files));
+  fileInput.value = '';
+});
+
+async function uploadFiles(files) {
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const d = await r.json();
+      toast(`Queued: ${file.name}`);
+      // Switch to queue panel
+      document.querySelector('[data-panel="queue"]').click();
+    } catch (e) {
+      toast(`Upload failed: ${e.message}`, 'red');
+    }
+  }
+}
+
+// ── SSE stream ──────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    handleEvent(msg);
+  };
+  es.onerror = () => setTimeout(connectSSE, 3000);
+}
+connectSSE();
+
+function handleEvent(msg) {
+  if (!msg.job_id) return;
+  const { job_id, event, data } = msg;
+
+  if (!jobs[job_id]) {
+    jobs[job_id] = { id: job_id, status: 'queued', step: 'queued', log: [], progress: 0, total: 0 };
+  }
+  const job = jobs[job_id];
+
+  if (event === 'status') {
+    job.status = data.status;
+    job.step   = data.step || job.step;
+    if (data.detail) job.log.push({ text: data.detail, cls: 'amber' });
+  } else if (event === 'progress') {
+    job.step     = data.step;
+    job.progress = data.done;
+    job.total    = data.total;
+  } else if (event === 'page_written') {
+    job.log.push({ text: `✓ wrote wiki/${data.path}`, cls: 'green' });
+  } else if (event === 'done') {
+    job.status = 'done';
+    job.progress = job.total || 1;
+    job.log.push({ text: `✓ ${data.pages_written} pages written to wiki`, cls: 'green' });
+    toast(`Done: ${job.filename || job_id.slice(0,8)}`);
+  } else if (event === 'error') {
+    job.status = 'failed';
+    job.log.push({ text: `✗ ${data.message}`, cls: 'red' });
+    toast(`Failed: ${data.message}`, 'red');
+  } else if (event === 'warning') {
+    job.log.push({ text: `⚠ ${data.detail}`, cls: 'amber' });
+  }
+
+  renderJobCard(job_id);
+}
+
+function renderJobCard(job_id) {
+  const job  = jobs[job_id];
+  const list = document.getElementById('queue-list');
+  list.querySelector('[style*="No jobs"]')?.remove();
+
+  let card = document.getElementById('job-' + job_id);
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'job-' + job_id;
+    card.className = 'job-card';
+    list.prepend(card);
+  }
+  card.className = `job-card ${job.status}`;
+
+  const pct  = job.total ? Math.round(job.progress / job.total * 100) : (job.status === 'done' ? 100 : 0);
+  const name = job.filename || job_id.slice(0, 12);
+  const step = stepLabel(job.step);
+  const logHtml = job.log.slice(-6).map(l => `<div class="entry ${l.cls}">${escHtml(l.text)}</div>`).join('');
+
+  card.innerHTML = `
+    <div class="job-top">
+      <span class="job-name" title="${escHtml(name)}">${escHtml(name)}</span>
+      <span class="job-status ${job.status}">${job.status}</span>
+    </div>
+    <div class="job-step">${step}</div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div class="job-log">${logHtml}</div>
+  `;
+}
+
+function stepLabel(step) {
+  const map = {
+    queued:         '⏳ Waiting in queue',
+    starting:       '⚡ Initializing…',
+    ocr:            '👁  Running OCR on pages',
+    enriching:      '🧠 Enriching with LLM…',
+    llm_enriching:  '🧠 Calling LLM for wiki pages…',
+    done:           '✓ Complete',
+    error:          '✗ Error occurred',
+  };
+  return map[step] || step || '—';
+}
+
+// ── Load jobs from DB ────────────────────────────────────────────────────────
+async function loadJobs() {
+  const rows = await (await fetch('/api/jobs')).json();
+  rows.forEach(r => {
+    if (!jobs[r.id]) {
+      jobs[r.id] = { id: r.id, filename: r.filename, status: r.status,
+                     step: r.step, log: [], progress: r.progress || 0, total: r.total || 0 };
+    }
+    renderJobCard(r.id);
+  });
+  const count = document.getElementById('queue-count');
+  if (count) count.textContent = `${rows.length} jobs`;
+}
+
+// ── Wiki tree ────────────────────────────────────────────────────────────────
+async function loadTree() {
+  const tree = await (await fetch('/api/wiki/tree')).json();
+  const container = document.getElementById('tree-content');
+  container.innerHTML = '';
+  if (!tree.children || tree.children.length === 0) {
+    container.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:12px">Empty wiki. Upload a document first.</div>';
+    return;
+  }
+  renderTree(tree.children, container, '');
+}
+
+function renderTree(nodes, container, base) {
+  // Sort: dirs first, then files
+  const dirs  = nodes.filter(n => n.type === 'dir');
+  const files = nodes.filter(n => n.type === 'file');
+  for (const dir of dirs) {
+    const label = document.createElement('div');
+    label.className = 'tree-dir';
+    label.textContent = dir.name;
+    container.appendChild(label);
+    renderTree(dir.children || [], container, dir.name + '/');
+  }
+  for (const file of files) {
+    const item = document.createElement('div');
+    item.className = 'tree-item';
+    const name = file.name.replace('.md', '');
+    item.textContent = name;
+    item.dataset.path = (base + file.name);
+    item.addEventListener('click', () => loadPage(item.dataset.path, item));
+    container.appendChild(item);
+  }
+}
+
+async function loadPage(path, el) {
+  document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('active'));
+  el?.classList.add('active');
+  const content = document.getElementById('wiki-content');
+  content.innerHTML = '<div style="padding:32px 40px;color:var(--muted)">Loading…</div>';
+  try {
+    const r = await (await fetch('/api/wiki/page?path=' + encodeURIComponent(path))).json();
+    const md = processWikilinks(r.content);
+    const html = marked.parse(md);
+    content.innerHTML = `<div class="md-body">${html}</div>`;
+    // Activate wikilink clicks
+    content.querySelectorAll('.wikilink').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const target = a.dataset.target;
+        // Find tree item matching
+        const item = document.querySelector(`.tree-item[data-path*="${target}"]`);
+        if (item) {
+          item.click();
+        } else {
+          toast(`Page not found: ${target}`, 'amber');
+        }
+      });
+    });
+  } catch {
+    content.innerHTML = '<div style="padding:32px 40px;color:var(--red)">Failed to load page.</div>';
+  }
+}
+
+function processWikilinks(md) {
+  return md.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
+    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    return `<a class="wikilink" data-target="${escHtml(name)}" href="#">${escHtml(name)}</a>`;
+  });
+}
+
+// ── Query / Chat ─────────────────────────────────────────────────────────────
+const chatMessages = document.getElementById('chat-messages');
+const chatInput    = document.getElementById('chat-input');
+const chatSend     = document.getElementById('chat-send');
+
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+});
+chatSend.addEventListener('click', sendQuery);
+
+async function sendQuery() {
+  const q = chatInput.value.trim();
+  if (!q) return;
+  chatInput.value = '';
+  chatSend.disabled = true;
+
+  appendMsg('user', q);
+  const assistantEl = appendMsg('assistant', '');
+  const body = assistantEl.querySelector('.msg-body');
+
+  try {
+    const r = await fetch('/api/query', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ question: q }),
+    });
+    const reader = r.body.getReader();
+    const dec    = new TextDecoder();
+    let   full   = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = dec.decode(value);
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const d = JSON.parse(line.slice(5).trim());
+        if (d.chunk) {
+          full += d.chunk;
+          body.innerHTML = `<div class="md-body">${marked.parse(processWikilinks(full))}</div>`;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      }
+    }
+  } catch(e) {
+    body.textContent = `Error: ${e.message}`;
+  } finally {
+    chatSend.disabled = false;
+    chatInput.focus();
+  }
+}
+
+function appendMsg(role, text) {
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  wrap.innerHTML = `
+    <div class="msg-meta">${role === 'user' ? 'You' : 'Wiki'} · ${time}</div>
+    <div class="msg-body">${text}</div>
+  `;
+  chatMessages.appendChild(wrap);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return wrap;
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+async function loadStats() {
+  const d = await (await fetch('/api/stats')).json();
+  document.getElementById('s-total').textContent    = d.wiki.total;
+  document.getElementById('s-sources').textContent  = d.wiki.sources;
+  document.getElementById('s-entities').textContent = d.wiki.entities;
+  document.getElementById('s-concepts').textContent = d.wiki.concepts;
+  document.getElementById('s-done').textContent     = d.jobs.done;
+  document.getElementById('s-failed').textContent   = d.jobs.failed;
+  const el = document.getElementById('log-entries');
+  if (d.recent_log.length) {
+    el.innerHTML = d.recent_log
+      .map(l => `<div class="log-entry"><strong>${escHtml(l)}</strong></div>`)
+      .join('');
+  } else {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px">No activity yet.</div>';
+  }
+}
+
+document.getElementById('lint-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('lint-btn');
+  const rep = document.getElementById('lint-report');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  rep.innerHTML = '<span style="color:var(--muted)">Linting wiki, please wait…</span>';
+  try {
+    const r = await (await fetch('/api/lint', {method:'POST'})).json();
+    rep.innerHTML = `<div class="md-body">${marked.parse(r.report)}</div>`;
+  } catch(e) {
+    rep.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Lint Check';
+  }
+});
+
+// ── Utils ────────────────────────────────────────────────────────────────────
+function toast(msg, color='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.color = color === 'red' ? 'var(--red)' : color === 'amber' ? 'var(--amber)' : 'var(--text)';
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Initial load
+loadJobs();
+</script>
+</body>
+</html>
