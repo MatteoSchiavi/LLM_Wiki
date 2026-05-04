@@ -1,30 +1,34 @@
 """
-Secondo Cervello v3 — The Ultimate Local AI Knowledge Base
+Secondo Cervello v4 — The Ultimate Local AI Knowledge Base
 
 Pipeline:
-  Upload → OCR (glm-ocr, keep_alive=5m, explicit unload) → raw .md
-         → Qwen loads → reads existing wiki + SCHEMA.md → fixes typos
-         → adds [[wikilinks]] → categorizes → writes to correct folder
-         → cross-references → processes pending tasks → updates index
+  Upload -> Smart Route:
+    PDFs/Images  -> OCR (glm-ocr, keep_alive=5m, explicit unload) -> raw .md
+    Audio        -> Whisper transcription -> raw .md
+    Text/Code    -> Read directly (NO OCR, skip vision model entirely)
+  -> Qwen loads -> reads existing wiki + SCHEMA.md -> fixes typos
+  -> adds [[wikilinks]] -> categorizes -> writes to correct folder
+  -> cross-references -> processes pending tasks -> updates index
 
-New in v3:
-  - Incremental compilation (SHA-256 hashing)
-  - aiosqlite database with state separation
-  - Non-blocking BM25 indexing
-  - Adjacency list for neighbor-expanded search
-  - Schema-driven prompts (SCHEMA.md)
-  - Web search ingestion
-  - Audio transcription (Whisper)
-  - Programmatic API endpoints
-  - Revise & Organize batch operation
-  - Durable task ledger
-  - Automated cross-referencing
+Folder Watcher:
+  Drop files into the configured inbox folder -> auto-processed through
+  the same pipeline. Enable with watch_enabled: true in config.yaml.
+
+v4 fixes applied:
+  - Fix #2:  progress_cb is async-safe (no coroutines in sync lambdas)
+  - Fix #3:  search.add_document() exists (was already there)
+  - Fix #4:  Web search rewritten with httpx + DuckDuckGo HTML (no z_ai_web_dev_sdk)
+  - Fix #17: Auto-execute pending tasks after every ingest (not just on revise)
+  - Fix #1:  emit_fn standardised to 2-arg everywhere
+  - NEW: Folder watcher (watchdog) for auto-processing dropped files
+  - NEW: Smart routing — text files skip OCR entirely, go directly to Qwen
 """
 
 import asyncio
 import hashlib
 import json
 import logging
+import re
 import shutil
 import uuid
 from contextlib import asynccontextmanager
@@ -41,6 +45,7 @@ from config_loader import CFG
 from db import Database
 from ocr import ocr_pdf, ocr_image, transcribe_audio, unload_ocr_model
 from ocr import PDF_EXTENSIONS, IMAGE_EXTENSIONS, AUDIO_EXTENSIONS
+from watcher import FolderWatcher, ALL_TEXT_EXTENSIONS, ALL_SUPPORTED, get_file_route
 from wiki import WikiEngine, compute_sha256
 from search import BM25Search
 
@@ -74,7 +79,7 @@ search = BM25Search(VAULT)
 db     = Database(str(DB_PATH))
 _sse_clients: list[asyncio.Queue] = []
 
-SUPPORTED_EXTENSIONS = PDF_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS | {".txt", ".md"}
+SUPPORTED_EXTENSIONS = ALL_SUPPORTED
 
 
 def emit(job_id: str, event: str, data: dict):
@@ -95,34 +100,48 @@ def emit(job_id: str, event: str, data: dict):
 
 # ─── Background pipeline ──────────────────────────────────────────────────────
 async def run_pipeline(job_id: str, filename: str, tmp_path: Path):
-    """Full pipeline: OCR → unload → Qwen enrichment → write wiki pages."""
+    """Full pipeline: OCR -> unload -> Qwen enrichment -> write wiki pages."""
     try:
         await db.upsert_job(job_id, filename=filename, status="running", step="starting")
         emit(job_id, "status", {"status": "running", "step": "starting"})
 
         suffix = tmp_path.suffix.lower()
 
-        # ── Step 1: OCR / text extraction / audio transcription ──────────
-        if suffix in PDF_EXTENSIONS:
-            def on_page(done, total):
-                emit(job_id, "progress", {"step": "ocr", "done": done, "total": total})
-            emit(job_id, "status", {"status": "running", "step": "ocr"})
-            raw_md = await ocr_pdf(tmp_path, progress_cb=lambda d, t: (
-                db.upsert_job(job_id, step="ocr", progress=d, total=t),
-                on_page(d, t)
-            ))
+        # ── Step 1: Smart routing — OCR / text / audio ──────────────────
+        # Text files (.txt, .md, .csv, .json, .html, .py, etc.) SKIP OCR
+        # entirely and go directly to Qwen for markdown conversion.
+        # Only PDFs and images need the vision model (glm-ocr).
+        # Audio files go through Whisper transcription.
 
-        elif suffix in IMAGE_EXTENSIONS:
-            emit(job_id, "status", {"status": "running", "step": "ocr"})
+        route = get_file_route(suffix)
+        log.info(f"Job {job_id[:8]}: routing '{filename}' -> {route}")
+
+        if route == "ocr" and suffix in PDF_EXTENSIONS:
+            async def on_page(done, total):
+                emit(job_id, "progress", {"step": "ocr", "done": done, "total": total})
+                await db.upsert_job(job_id, step="ocr", progress=done, total=total)
+
+            emit(job_id, "status", {"status": "running", "step": "ocr",
+                                     "detail": f"OCR processing PDF ({suffix})…"})
+            raw_md = await ocr_pdf(tmp_path, progress_cb=lambda d, t: asyncio.ensure_future(on_page(d, t)))
+
+        elif route == "ocr" and suffix in IMAGE_EXTENSIONS:
+            emit(job_id, "status", {"status": "running", "step": "ocr",
+                                     "detail": f"OCR processing image ({suffix})…"})
             raw_md = await ocr_image(tmp_path, progress_cb=lambda d, t: None)
 
-        elif suffix in AUDIO_EXTENSIONS:
-            emit(job_id, "status", {"status": "running", "step": "transcribe"})
+        elif route == "transcribe":
+            emit(job_id, "status", {"status": "running", "step": "transcribe",
+                                     "detail": f"Transcribing audio ({suffix})…"})
             raw_md = await transcribe_audio(tmp_path, progress_cb=lambda d, t: None)
 
-        elif suffix in {".md", ".txt"}:
+        elif route == "text":
+            # SMART ROUTE: Text/code files skip OCR entirely!
+            # They're already text — no vision model needed.
+            # Go directly to Qwen for structuring and wiki conversion.
             raw_md = tmp_path.read_text(encoding="utf-8", errors="replace")
-            emit(job_id, "status", {"status": "running", "step": "reading"})
+            emit(job_id, "status", {"status": "running", "step": "reading",
+                                     "detail": f"Reading text file ({suffix}) — skipping OCR"})
         else:
             raise ValueError(f"Unsupported file type: {suffix}")
 
@@ -145,6 +164,7 @@ async def run_pipeline(job_id: str, filename: str, tmp_path: Path):
         await db.upsert_job(job_id, step="enriching", progress=0, total=1)
         emit(job_id, "status", {"status": "running", "step": "enriching"})
 
+        # Fix #1: emit_fn is 2-arg (event, data), job_id captured in closure
         pages_written = await wiki.ingest(
             raw_text=raw_md,
             filename=filename,
@@ -161,17 +181,25 @@ async def run_pipeline(job_id: str, filename: str, tmp_path: Path):
             wiki_completed_at=datetime.now().isoformat(),
         )
 
-        # Record entity pages in DB
-        # (handled within wiki.ingest, but we could also track here)
-
         # ── Step 3: Rebuild search index (non-blocking) + adjacency list ─
         await search.async_rebuild()
         search.build_adjacency_list()
         search.save_adjacency_list(ADJ_PATH)
 
+        # Fix #17: Auto-execute pending tasks after every ingest
+        tasks_done = await wiki._process_pending_tasks(
+            emit_fn=lambda event, data: emit(job_id, event, data)
+        )
+        if tasks_done > 0:
+            log.info(f"Auto-executed {tasks_done} pending tasks after ingest")
+            # Rebuild search if tasks created new pages
+            await search.async_rebuild()
+            search.build_adjacency_list()
+            search.save_adjacency_list(ADJ_PATH)
+
         await db.upsert_job(job_id, status="done", step="done", progress=1, total=1)
-        emit(job_id, "done", {"pages_written": pages_written})
-        log.info(f"Job {job_id[:8]} done — {pages_written} pages written")
+        emit(job_id, "done", {"pages_written": pages_written, "tasks_executed": tasks_done})
+        log.info(f"Job {job_id[:8]} done — {pages_written} pages written, {tasks_done} tasks executed")
 
     except Exception as e:
         log.error(f"Job {job_id[:8]} failed: {e}", exc_info=True)
@@ -181,19 +209,29 @@ async def run_pipeline(job_id: str, filename: str, tmp_path: Path):
         tmp_path.unlink(missing_ok=True)
 
 
-# ─── FastAPI setup ────────────────────────────────────────────────────────────
+# ─── Folder watcher ────────────────────────────────────────────────────────────
+watcher = FolderWatcher(run_pipeline)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init()
     await search.async_rebuild()
     search.build_adjacency_list()
     search.load_adjacency_list(ADJ_PATH)
+
+    # Start folder watcher if enabled
+    watcher.start()
+
     log.info(f"Vault: {VAULT.resolve()}")
-    log.info(f"Ready → http://localhost:{CFG['server']['port']}")
+    log.info(f"Ready -> http://localhost:{CFG['server']['port']}")
     yield
 
+    # Cleanup: stop watcher
+    watcher.stop()
 
-app = FastAPI(title="Secondo Cervello v3", lifespan=lifespan)
+
+app = FastAPI(title="Secondo Cervello v4", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 templates = Jinja2Templates(directory=str(TMPL_DIR))
 
@@ -436,8 +474,59 @@ def get_config():
         "vault_path": str(VAULT.resolve()),
         "ocr_model": CFG["ocr_model"],
         "llm_model": CFG["llm_model"],
+        "watch_enabled": CFG.get("watch_enabled", False),
+        "watch_folder": str(watcher.inbox.resolve()),
+        "watcher_running": watcher.is_running,
         "categories": [{"slug": c["slug"], "name": c["name"]} for c in CFG["categories"]],
+        "supported_extensions": sorted(SUPPORTED_EXTENSIONS),
+        "routing": {
+            "ocr": sorted(PDF_EXTENSIONS | IMAGE_EXTENSIONS),
+            "transcribe": sorted(AUDIO_EXTENSIONS),
+            "text_skip_ocr": sorted(ALL_TEXT_EXTENSIONS),
+        },
     }
+
+
+# ─── Watcher API endpoints ─────────────────────────────────────────────────────
+
+@app.get("/api/watcher/status")
+def watcher_status():
+    """Get the current status of the folder watcher."""
+    inbox = watcher.inbox
+    pending_files = []
+    if inbox.exists():
+        for f in sorted(inbox.iterdir()):
+            if f.is_file() and not f.name.startswith(".") and not f.name.startswith("~"):
+                route = get_file_route(f.suffix)
+                pending_files.append({
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "route": route,
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                })
+
+    return {
+        "enabled": CFG.get("watch_enabled", False),
+        "running": watcher.is_running,
+        "inbox_path": str(inbox.resolve()),
+        "pending_files": pending_files,
+    }
+
+
+@app.post("/api/watcher/toggle")
+async def watcher_toggle(request: Request):
+    """Toggle the folder watcher on/off."""
+    body = await request.json() if request.headers.get("content-type") else {}
+    enable = body.get("enable", not watcher.is_running)
+
+    if enable and not watcher.is_running:
+        watcher.start()
+        return {"status": "started", "running": True}
+    elif not enable and watcher.is_running:
+        watcher.stop()
+        return {"status": "stopped", "running": False}
+    else:
+        return {"status": "unchanged", "running": watcher.is_running}
 
 
 # ─── Programmatic API endpoints ──────────────────────────────────────────────
@@ -473,7 +562,7 @@ async def api_v1_ingest(request: Request):
     rel_path = f"{folder}/{slug}.md"
     wiki._write_page(rel_path, full_content)
 
-    # Incremental search update
+    # Incremental search update (Fix #3: add_document already exists)
     search.add_document(rel_path, full_content)
     search.build_adjacency_list()
     search.save_adjacency_list(ADJ_PATH)
@@ -515,13 +604,13 @@ def api_v1_graph():
             "adjacency": search._adjacency}
 
 
-# ─── Web Search Ingestion ────────────────────────────────────────────────────
+# ─── Web Search Ingestion (Fix #4: httpx + DuckDuckGo, no z_ai_web_dev_sdk) ─
 
 @app.post("/api/web-search")
 async def web_search_ingest(request: Request, background_tasks: BackgroundTasks):
     """
-    Search the web, fetch results, and ingest into the wiki.
-    Uses the configured search API.
+    Search the web using DuckDuckGo HTML, fetch results, and ingest into the wiki.
+    Fix #4: Rewritten to use httpx + DuckDuckGo instead of z_ai_web_dev_sdk.
     """
     body = await request.json()
     query = body.get("query", "").strip()
@@ -537,61 +626,90 @@ async def web_search_ingest(request: Request, background_tasks: BackgroundTasks)
 
     async def _run_web_search():
         try:
-            from z_ai_web_dev_sdk import ZAI
-            zai = await ZAI.create()
-            results = await zai.functions.invoke("web_search", {"query": query, "num": num_results})
+            results_found = 0
 
-            # Save each result as a source file
-            for result in results:
-                url = result.get("url", "")
-                name = result.get("name", "Untitled")
-                snippet = result.get("snippet", "")
+            # Step 1: Search DuckDuckGo HTML
+            async with httpx.AsyncClient(
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                },
+                follow_redirects=True,
+                timeout=15.0,
+            ) as client:
+                search_url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
+                r = await client.get(search_url)
+                r.raise_for_status()
+                html = r.text
 
-                # Try to fetch full page content
-                try:
-                    page_data = await zai.functions.invoke("page_reader", {"url": url})
-                    page_text = page_data.get("data", {}).get("html", "") if isinstance(page_data, dict) else ""
-                    # Simple HTML to text
-                    import re
-                    page_text = re.sub(r'<[^>]+>', ' ', page_text)
-                    page_text = re.sub(r'\s+', ' ', page_text).strip()
-                    content = page_text[:50000] if page_text else snippet
-                except Exception:
-                    content = snippet
-
-                if not content:
-                    continue
-
-                # Save to attachments and trigger standard processing
-                safe_name = re.sub(r'[^\w\s-]', '', name)[:60].strip().replace(' ', '_')
-                raw_path = RAW_DIR / f"web_{safe_name}.md"
-                today = datetime.now().strftime("%Y-%m-%d")
-                md_content = (
-                    f"# {name}\n\n"
-                    f"> **Source:** [{url}]({url})\n"
-                    f"> **Retrieved:** {today}\n\n"
-                    f"{content}\n"
+                # Parse results from DDG HTML
+                # DDG HTML uses <a class="result__a" href="...">Title</a>
+                result_links = re.findall(
+                    r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+                    html,
                 )
-                raw_path.write_text(md_content, encoding="utf-8")
-
-                # Process through wiki engine
-                emit(job_id, "status", {
-                    "status": "running", "step": "web_ingest",
-                    "detail": f"Processing: {name}",
-                })
-                pages = await wiki.ingest(
-                    raw_text=md_content,
-                    filename=f"web_{safe_name}.md",
-                    job_id=job_id,
-                    emit_fn=lambda event, data: emit(job_id, event, data),
+                result_snippets = re.findall(
+                    r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
+                    html,
                 )
+
+                for idx, (url, name_html) in enumerate(result_links[:num_results]):
+                    # Clean HTML from title
+                    name = re.sub(r'<[^>]+>', '', name_html).strip()
+                    snippet = re.sub(r'<[^>]+>', '', result_snippets[idx]).strip() if idx < len(result_snippets) else ""
+
+                    if not name:
+                        continue
+
+                    # Try to fetch the page content
+                    page_text = ""
+                    try:
+                        page_r = await client.get(url, timeout=10.0)
+                        if page_r.status_code == 200:
+                            # Simple HTML to text: strip tags
+                            page_text = re.sub(r'<script[^>]*>.*?</script>', ' ', page_r.text, flags=re.DOTALL)
+                            page_text = re.sub(r'<style[^>]*>.*?</style>', ' ', page_text, flags=re.DOTALL)
+                            page_text = re.sub(r'<[^>]+>', ' ', page_text)
+                            page_text = re.sub(r'\s+', ' ', page_text).strip()
+                            page_text = page_text[:50000]
+                    except Exception:
+                        pass
+
+                    content = page_text if page_text else snippet
+                    if not content:
+                        continue
+
+                    # Save to attachments and process through wiki engine
+                    safe_name = re.sub(r'[^\w\s-]', '', name)[:60].strip().replace(' ', '_')
+                    raw_path = RAW_DIR / f"web_{safe_name}.md"
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    md_content = (
+                        f"# {name}\n\n"
+                        f"> **Source:** [{url}]({url})\n"
+                        f"> **Retrieved:** {today}\n\n"
+                        f"{content}\n"
+                    )
+                    raw_path.write_text(md_content, encoding="utf-8")
+
+                    # Process through wiki engine
+                    emit(job_id, "status", {
+                        "status": "running", "step": "web_ingest",
+                        "detail": f"Processing: {name}",
+                    })
+                    pages = await wiki.ingest(
+                        raw_text=md_content,
+                        filename=f"web_{safe_name}.md",
+                        job_id=job_id,
+                        emit_fn=lambda event, data: emit(job_id, event, data),
+                    )
+                    results_found += 1
 
             await search.async_rebuild()
             search.build_adjacency_list()
             search.save_adjacency_list(ADJ_PATH)
 
             await db.upsert_job(job_id, status="done", step="done")
-            emit(job_id, "done", {"pages_written": 0, "web_results": len(results)})
+            emit(job_id, "done", {"pages_written": 0, "web_results": results_found})
         except Exception as e:
             log.error(f"Web search job {job_id[:8]} failed: {e}", exc_info=True)
             await db.upsert_job(job_id, status="failed", step="error", error=str(e))
@@ -602,7 +720,6 @@ async def web_search_ingest(request: Request, background_tasks: BackgroundTasks)
 
 
 def _to_slug(s: str) -> str:
-    import re
     s = s.lower().strip()
     s = re.sub(r"[^a-z0-9\s-]", "", s)
     s = re.sub(r"\s+", "-", s)

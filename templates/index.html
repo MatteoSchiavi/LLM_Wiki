@@ -3,27 +3,28 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Secondo Cervello</title>
+<title>Secondo Cervello v4</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg:       #08080c;
-  --bg2:      #0c0c12;
-  --surface:  #111118;
-  --raised:   #18181f;
-  --raised2:  #1e1e28;
-  --border:   #25252f;
-  --border2:  #30303d;
-  --border3:  #3a3a4a;
-  --text:     #e4e4ec;
-  --text2:    #c0c0cc;
-  --muted:    #6b6b7a;
-  --dim:      #4a4a58;
+  --bg:       #07070b;
+  --bg2:      #0b0b11;
+  --surface:  #101017;
+  --raised:   #16161e;
+  --raised2:  #1c1c26;
+  --border:   #22222e;
+  --border2:  #2c2c3a;
+  --border3:  #383848;
+  --text:     #e6e6f0;
+  --text2:    #c2c2d0;
+  --muted:    #6e6e80;
+  --dim:      #4c4c5e;
   --amber:    #f59e0b;
   --amber2:   #fbbf24;
   --amber3:   #fcd34d;
+  --amber-bg: rgba(245,158,11,0.07);
   --green:    #22c55e;
   --green2:   #4ade80;
   --red:      #ef4444;
@@ -34,8 +35,11 @@
   --r:        8px;
   --r2:       12px;
   --r3:       16px;
-  --shadow:   0 4px 24px rgba(0,0,0,0.4);
-  --glow:     0 0 20px rgba(245,158,11,0.15);
+  --shadow:   0 4px 24px rgba(0,0,0,0.5);
+  --glow:     0 0 24px rgba(245,158,11,0.12);
+  --glass:    rgba(16,16,23,0.65);
+  --glass-border: rgba(255,255,255,0.06);
+  --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,6 +53,26 @@ body {
   line-height: 1.5;
 }
 
+/* ── Background ambient ── */
+body::before {
+  content: '';
+  position: fixed;
+  top: -40%; left: -20%;
+  width: 80%; height: 80%;
+  background: radial-gradient(ellipse, rgba(245,158,11,0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -30%; right: -15%;
+  width: 70%; height: 70%;
+  background: radial-gradient(ellipse, rgba(129,140,248,0.02) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* ── Sidebar ── */
 #sidebar {
   width: 240px;
@@ -59,12 +83,16 @@ body {
   flex-direction: column;
   height: 100vh;
   position: relative;
-  z-index: 10;
+  z-index: 20;
+  transition: transform var(--transition), width var(--transition);
 }
 
 #sidebar-header {
   padding: 20px 16px 16px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 #logo {
@@ -83,7 +111,20 @@ body {
   text-transform: uppercase;
 }
 
-#nav { padding: 12px 8px; flex: 1; }
+#sidebar-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
+  border-radius: var(--r);
+  transition: all var(--transition);
+}
+#sidebar-toggle:hover { color: var(--text); background: var(--raised); }
+
+#nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
 
 .nav-section {
   font-size: 10px;
@@ -108,22 +149,42 @@ body {
   font-size: 13px;
   font-weight: 500;
   border-radius: var(--r);
-  transition: all 0.15s ease;
+  transition: all var(--transition);
   text-align: left;
+  position: relative;
 }
 .nav-btn:hover { color: var(--text2); background: var(--raised); }
 .nav-btn.active {
   color: var(--amber);
-  background: rgba(245,158,11,0.08);
-  box-shadow: inset 0 0 0 1px rgba(245,158,11,0.15);
+  background: var(--amber-bg);
+}
+.nav-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 2px 2px 0;
+  background: var(--amber);
 }
 .nav-btn .icon {
   width: 20px;
-  text-align: center;
-  font-size: 14px;
-  opacity: 0.7;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.nav-btn.active .icon { opacity: 1; }
+.nav-btn .icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 #sidebar-footer {
   padding: 12px 16px;
@@ -136,12 +197,22 @@ body {
   width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--muted);
-  transition: background 0.3s;
+  transition: background 0.3s, box-shadow 0.3s;
   flex-shrink: 0;
 }
-#status-dot.ok { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.4); }
-#status-dot.err { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+#status-dot.ok { background: var(--green); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+#status-dot.err { background: var(--red); box-shadow: 0 0 8px rgba(239,68,68,0.5); }
 #status-label { font-size: 11px; color: var(--muted); }
+
+/* ── Mobile overlay ── */
+#sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 15;
+  backdrop-filter: blur(2px);
+}
 
 /* ── Main content ── */
 #content {
@@ -151,16 +222,23 @@ body {
   flex-direction: column;
   position: relative;
   background: var(--bg);
+  z-index: 1;
 }
 
 .panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
-.panel.active { display: flex; }
+.panel.active { display: flex; animation: panelIn 0.25s ease; }
+
+@keyframes panelIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
 /* ── Upload panel ── */
 #panel-upload {
   align-items: center;
   justify-content: center;
   padding: 40px;
+  overflow-y: auto;
 }
 
 #upload-hero {
@@ -172,21 +250,26 @@ body {
 #drop-zone {
   border: 2px dashed var(--border2);
   border-radius: var(--r3);
-  padding: 60px 40px;
+  padding: 56px 40px;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: all 0.3s ease;
   position: relative;
-  background: linear-gradient(135deg, rgba(245,158,11,0.02), rgba(129,140,248,0.02));
+  background: linear-gradient(135deg, rgba(245,158,11,0.015), rgba(129,140,248,0.01));
+  backdrop-filter: blur(8px);
 }
 #drop-zone:hover, #drop-zone.drag {
   border-color: var(--amber);
-  background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(129,140,248,0.04));
+  background: linear-gradient(135deg, rgba(245,158,11,0.05), rgba(129,140,248,0.03));
   box-shadow: var(--glow);
+  transform: translateY(-2px);
+}
+#drop-zone.drag {
+  transform: scale(1.01);
 }
 #drop-zone .icon {
   font-size: 48px;
   margin-bottom: 16px;
-  opacity: 0.4;
+  opacity: 0.35;
   display: block;
 }
 #drop-zone h2 {
@@ -222,9 +305,68 @@ body {
   font-size: 11px;
   color: var(--dim);
   font-family: 'JetBrains Mono', monospace;
-  transition: all 0.15s;
+  transition: all var(--transition);
 }
 .badge:hover { border-color: var(--amber); color: var(--amber); }
+
+/* Web search box */
+#web-search-section {
+  margin-top: 28px;
+  padding: 24px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r2);
+  backdrop-filter: blur(12px);
+}
+#web-search-section h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#web-search-section h3 svg {
+  width: 16px; height: 16px;
+  stroke: var(--cyan);
+  fill: none;
+  stroke-width: 2;
+}
+#web-search-row {
+  display: flex;
+  gap: 8px;
+}
+#web-search-input {
+  flex: 1;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 14px;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+#web-search-input:focus { border-color: var(--amber); }
+#web-search-input::placeholder { color: var(--dim); }
+#web-search-btn {
+  padding: 10px 18px;
+  background: linear-gradient(135deg, var(--amber), #d97706);
+  border: none;
+  border-radius: var(--r);
+  color: #0c0c0f;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+#web-search-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+#web-search-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 #recent-uploads {
   margin-top: 32px;
@@ -249,7 +391,7 @@ body {
   margin-bottom: 4px;
   font-size: 12px;
   color: var(--muted);
-  transition: background 0.1s;
+  transition: background 0.15s;
 }
 .upload-item:hover { background: var(--raised); }
 .upload-item .fname { color: var(--text2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -265,6 +407,8 @@ body {
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
 }
 #queue-header h2 {
   font-family: 'Space Grotesk', sans-serif;
@@ -283,10 +427,15 @@ body {
   padding: 16px 18px;
   margin-bottom: 10px;
   transition: all 0.2s;
+  animation: cardIn 0.3s ease;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .job-card.running {
   border-color: rgba(245,158,11,0.35);
-  box-shadow: 0 0 12px rgba(245,158,11,0.05);
+  box-shadow: 0 0 16px rgba(245,158,11,0.06);
 }
 .job-card.done {
   border-color: rgba(34,197,94,0.25);
@@ -336,7 +485,8 @@ body {
 .job-log .entry { padding: 1px 0; }
 .job-log .entry.green { color: var(--green); }
 .job-log .entry.amber { color: var(--amber); }
-.job-log .entry.red { color: var(--red); }
+.job-log .entry.red   { color: var(--red); }
+.job-log .entry.cyan  { color: var(--cyan); }
 
 /* ── Wiki panel ── */
 #panel-wiki { flex-direction: row; }
@@ -348,6 +498,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg2);
 }
 
 #wiki-search-bar {
@@ -365,7 +516,7 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 13px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition);
 }
 #wiki-search:focus { border-color: var(--amber); }
 #wiki-search::placeholder { color: var(--dim); }
@@ -390,6 +541,7 @@ body {
   gap: 6px;
   cursor: pointer;
   user-select: none;
+  transition: color 0.15s;
 }
 .tree-dir:hover { color: var(--muted); }
 .tree-dir .arrow {
@@ -410,10 +562,8 @@ body {
   transition: all 0.1s;
 }
 .tree-item:hover { color: var(--text2); background: var(--raised); }
-.tree-item.active { color: var(--amber); background: rgba(245,158,11,0.08); }
-.tree-item.entity { padding-left: 24px; }
-.tree-item.concept { padding-left: 24px; }
-.tree-item.moc { padding-left: 24px; }
+.tree-item.active { color: var(--amber); background: var(--amber-bg); }
+.tree-item.hidden { display: none; }
 
 #wiki-content {
   flex: 1;
@@ -423,7 +573,7 @@ body {
 }
 
 #wiki-page {
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 32px 40px 60px;
 }
@@ -440,10 +590,67 @@ body {
 }
 #wiki-empty .big {
   font-size: 56px;
-  opacity: 0.15;
+  opacity: 0.12;
   margin-bottom: 16px;
 }
 #wiki-empty p { font-size: 14px; }
+
+/* ── Wiki search results ── */
+.search-results {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 40px 60px;
+}
+.search-results h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 16px;
+}
+.search-result-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  padding: 16px 18px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.search-result-item:hover {
+  border-color: var(--border2);
+  transform: translateY(-1px);
+}
+.search-result-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.search-result-path {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+.search-result-snippet {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.search-result-snippet mark {
+  background: rgba(245,158,11,0.25);
+  color: var(--amber2);
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+.search-result-score {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 6px;
+}
 
 /* Markdown body styles */
 .md-body { line-height: 1.8; }
@@ -555,21 +762,80 @@ body {
   text-decoration: none;
   border-bottom: 1px dashed rgba(251,191,36,0.35);
   transition: all 0.1s;
+  position: relative;
 }
 .wikilink:hover {
   border-bottom-color: var(--amber2);
   color: var(--amber3);
 }
 
+/* ── Wikilink preview tooltip ── */
+#wikilink-preview {
+  position: fixed;
+  z-index: 100;
+  max-width: 360px;
+  min-width: 200px;
+  background: var(--raised2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r2);
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.6;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  max-height: 200px;
+  overflow: hidden;
+}
+#wikilink-preview.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+#wikilink-preview .preview-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: #fff;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#wikilink-preview .preview-type {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+}
+#wikilink-preview .preview-type.source  { color: var(--blue); border: 1px solid rgba(129,140,248,0.3); }
+#wikilink-preview .preview-type.entity  { color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+#wikilink-preview .preview-type.concept { color: var(--purple); border: 1px solid rgba(167,139,250,0.3); }
+#wikilink-preview .preview-type.moc     { color: var(--cyan); border: 1px solid rgba(34,211,238,0.3); }
+#wikilink-preview .preview-body {
+  color: var(--muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+
 /* Page metadata bar */
 #page-meta {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  margin-bottom: 20px;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 24px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+  background: var(--glass);
+  border-radius: var(--r2);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
 }
 .meta-tag {
   padding: 3px 10px;
@@ -579,13 +845,13 @@ body {
   font-size: 11px;
   color: var(--muted);
   font-family: 'JetBrains Mono', monospace;
+  transition: all 0.15s;
 }
-.meta-tag.source { color: var(--blue); border-color: rgba(129,140,248,0.25); }
-.meta-tag.entity { color: var(--green); border-color: rgba(34,197,94,0.25); }
-.meta-tag.concept { color: var(--purple); border-color: rgba(167,139,250,0.25); }
-.meta-tag.moc { color: var(--cyan); border-color: rgba(34,211,238,0.25); }
+.meta-tag.source  { color: var(--blue);   border-color: rgba(129,140,248,0.3); background: rgba(129,140,248,0.06); }
+.meta-tag.entity  { color: var(--green);  border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.06); }
+.meta-tag.concept { color: var(--purple); border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.06); }
+.meta-tag.moc     { color: var(--cyan);   border-color: rgba(34,211,238,0.3);  background: rgba(34,211,238,0.06); }
 
-/* Reprocess button */
 #btn-reprocess {
   padding: 5px 14px;
   background: none;
@@ -596,12 +862,12 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 11px;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: all var(--transition);
   margin-left: auto;
 }
 #btn-reprocess:hover { border-color: var(--amber); color: var(--amber); }
 
-/* ── Query / Chat panel ── */
+/* ── Chat panel ── */
 #panel-query { flex-direction: column; }
 
 #query-header {
@@ -611,6 +877,8 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
 }
 #query-header h2 {
   font-family: 'Space Grotesk', sans-serif;
@@ -632,7 +900,11 @@ body {
   gap: 16px;
 }
 
-.msg { display: flex; flex-direction: column; gap: 6px; max-width: 85%; }
+.msg { display: flex; flex-direction: column; gap: 6px; max-width: 85%; animation: msgIn 0.2s ease; }
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .msg.user { align-self: flex-end; }
 .msg.assistant { align-self: flex-start; }
 
@@ -660,9 +932,10 @@ body {
   color: var(--text);
 }
 .msg.assistant .msg-body {
-  background: linear-gradient(135deg, rgba(245,158,11,0.04), rgba(129,140,248,0.03));
-  border: 1px solid rgba(245,158,11,0.12);
+  background: linear-gradient(135deg, rgba(245,158,11,0.04), rgba(129,140,248,0.02));
+  border: 1px solid rgba(245,158,11,0.1);
   color: var(--text2);
+  backdrop-filter: blur(8px);
 }
 .msg.assistant .msg-body .md-body { font-size: 14px; }
 .msg.assistant .msg-body .md-body h1,
@@ -687,7 +960,7 @@ body {
   font-size: 14px;
   resize: none;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition);
   min-height: 44px;
   max-height: 120px;
 }
@@ -704,7 +977,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.15s;
+  transition: all var(--transition);
   white-space: nowrap;
 }
 #chat-send:hover { opacity: 0.9; transform: translateY(-1px); }
@@ -715,6 +988,11 @@ body {
 
 #dash-header {
   margin-bottom: 28px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 #dash-header h2 {
   font-family: 'Space Grotesk', sans-serif;
@@ -727,13 +1005,63 @@ body {
   font-size: 13px;
   margin-top: 4px;
 }
+#vault-path-display {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 6px;
+  background: var(--raised);
+  padding: 4px 10px;
+  border-radius: var(--r);
+  display: inline-block;
+}
+
+#revise-section {
+  flex-shrink: 0;
+}
+#btn-revise {
+  padding: 10px 24px;
+  background: linear-gradient(135deg, var(--amber), #d97706);
+  border: none;
+  border-radius: var(--r2);
+  color: #0c0c0f;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 0 20px rgba(245,158,11,0.15);
+}
+#btn-revise:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 0 28px rgba(245,158,11,0.25); }
+#btn-revise:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+#btn-revise svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+#revise-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--amber);
+  font-family: 'JetBrains Mono', monospace;
+  min-height: 18px;
+}
+#revise-result {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-radius: var(--r);
+  font-size: 12px;
+  color: var(--green);
+  display: none;
+}
 
 #dash-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 32px;
-  max-width: 1000px;
+  max-width: 1100px;
 }
 
 .stat-card {
@@ -741,9 +1069,20 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r2);
   padding: 20px;
-  transition: border-color 0.2s;
+  transition: all var(--transition);
+  position: relative;
+  overflow: hidden;
 }
-.stat-card:hover { border-color: var(--border2); }
+.stat-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 0.3s;
+}
+.stat-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+.stat-card:hover::after { background: var(--amber); }
 .stat-label {
   font-size: 11px;
   color: var(--dim);
@@ -758,10 +1097,11 @@ body {
   font-weight: 800;
   color: #fff;
 }
-.stat-val.amber { color: var(--amber); }
-.stat-val.green { color: var(--green); }
-.stat-val.blue { color: var(--blue); }
+.stat-val.amber  { color: var(--amber); }
+.stat-val.green  { color: var(--green); }
+.stat-val.blue   { color: var(--blue); }
 .stat-val.purple { color: var(--purple); }
+.stat-val.cyan   { color: var(--cyan); }
 
 /* Category breakdown */
 #category-breakdown {
@@ -785,9 +1125,10 @@ body {
   border-radius: var(--r);
   margin-bottom: 4px;
   font-size: 13px;
+  transition: background 0.15s;
 }
 .cat-row:hover { background: var(--raised); }
-.cat-name { color: var(--text2); width: 160px; }
+.cat-name { color: var(--text2); width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-bar-bg {
   flex: 1;
   height: 6px;
@@ -799,7 +1140,7 @@ body {
   height: 100%;
   background: linear-gradient(90deg, var(--amber), var(--amber2));
   border-radius: 3px;
-  transition: width 0.4s ease;
+  transition: width 0.5s ease;
 }
 .cat-count { color: var(--muted); font-size: 12px; width: 30px; text-align: right; }
 
@@ -858,10 +1199,116 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: all var(--transition);
   margin-bottom: 12px;
 }
 #lint-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+/* ── Graph View ── */
+#graph-section {
+  max-width: 1000px;
+  margin-top: 32px;
+  margin-bottom: 32px;
+}
+#graph-section h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#graph-section h3 .graph-legend {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.graph-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+}
+.graph-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.graph-legend-dot.source  { background: var(--blue); }
+.graph-legend-dot.entity  { background: var(--green); }
+.graph-legend-dot.concept { background: var(--purple); }
+.graph-legend-dot.moc     { background: var(--cyan); }
+
+#graph-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+  height: 500px;
+}
+#graph-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+#graph-canvas:active { cursor: grabbing; }
+
+#graph-tooltip {
+  position: absolute;
+  z-index: 50;
+  background: var(--raised2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 6px 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  white-space: nowrap;
+}
+#graph-tooltip.visible { opacity: 1; }
+
+#graph-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+.graph-ctrl-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--raised2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all var(--transition);
+  backdrop-filter: blur(8px);
+}
+.graph-ctrl-btn:hover { color: var(--text); border-color: var(--amber); }
 
 /* ── Settings panel ── */
 #panel-settings { overflow-y: auto; padding: 28px; }
@@ -925,187 +1372,150 @@ body {
   pointer-events: none;
   z-index: 999;
   box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
 }
 #toast.show { opacity: 1; transform: translateY(0); }
 
 /* ── Animations ── */
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-.job-card { animation: fadeIn 0.25s ease; }
-.msg { animation: fadeIn 0.2s ease; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
+.pulse { animation: pulse 1.5s ease-in-out infinite; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  #sidebar { width: 56px; }
-  #sidebar-header { padding: 12px 8px; }
-  #logo, #logo-sub, .nav-btn span, .nav-section { display: none; }
-  .nav-btn { justify-content: center; padding: 10px; }
-  .nav-btn .icon { font-size: 18px; }
-  #sidebar-footer { padding: 8px; justify-content: center; }
-  #status-label { display: none; }
+  #sidebar {
+    position: fixed;
+    left: 0; top: 0;
+    transform: translateX(-100%);
+    z-index: 30;
+    box-shadow: var(--shadow);
+  }
+  #sidebar.open {
+    transform: translateX(0);
+  }
+  #sidebar-overlay.open {
+    display: block;
+  }
+  #sidebar-toggle {
+    display: flex;
+  }
+  #mobile-header {
+    display: flex !important;
+  }
   #wiki-sidebar { width: 200px; }
   #wiki-page { padding: 20px; }
-}
-/* ── Modern UI/UX Enhancements ── */
-:root {
-  --transition-spring: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1);
-  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  #dash-stats { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  #graph-container { height: 350px; }
 }
 
-/* Custom Webkit Scrollbars */
-::-webkit-scrollbar { 
-  width: 8px; 
-  height: 8px; 
+#mobile-header {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  flex-shrink: 0;
 }
-::-webkit-scrollbar-track { 
-  background: var(--bg); 
+#mobile-header h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
 }
-::-webkit-scrollbar-thumb { 
-  background: var(--border3); 
-  border-radius: 4px; 
-  border: 2px solid var(--bg); 
-}
-::-webkit-scrollbar-thumb:hover { 
-  background: var(--muted); 
-}
-
-/* Spring Animation for Panels */
-.panel.active { 
-  animation: panelInSpring 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
-}
-@keyframes panelInSpring {
-  0% { opacity: 0; transform: translateY(15px) scale(0.99); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Glassmorphism Depth */
-#queue-header, #query-header, #page-meta, #web-search-section {
-  background: rgba(16, 16, 23, 0.55);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--glass-shadow);
-  border: 1px solid var(--glass-border);
-}
-
-/* Tactile Button Feedback */
-#web-search-btn, #chat-send {
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
-  transition: transform var(--transition-spring), box-shadow var(--transition), opacity var(--transition);
-}
-#web-search-btn:hover, #chat-send:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 8px 25px rgba(245, 158, 11, 0.3);
-}
-#web-search-btn:active, #chat-send:active { 
-  transform: translateY(0) scale(0.98); 
-}
-
-/* Drag and Drop Zone Dynamics */
-#drop-zone {
-  transition: border-color var(--transition), background var(--transition), transform var(--transition-spring), box-shadow var(--transition);
-}
-#drop-zone:hover, #drop-zone.drag {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 12px 30px rgba(245, 158, 11, 0.12);
-  border-color: var(--amber2);
-}
-
-/* Sidebar Active State Fluidity */
-.nav-btn { 
-  transition: color var(--transition), background var(--transition), padding-left var(--transition); 
-}
-.nav-btn.active { 
-  padding-left: 16px; 
-  background: linear-gradient(90deg, var(--amber-bg) 0%, transparent 100%); 
-}
-.nav-btn.active::before { 
-  transition: height var(--transition-spring); 
-  height: 80%; 
-}
-
-/* Card & Message Entry Animations */
-.job-card { 
-  animation: cardInSpring 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards; 
-}
-@keyframes cardInSpring {
-  0% { opacity: 0; transform: translateY(10px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-.msg { 
-  animation: msgInSpring 0.35s cubic-bezier(0.16, 1, 0.3, 1) backwards; 
-}
-@keyframes msgInSpring {
-  0% { opacity: 0; transform: translateY(8px) scale(0.98); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Input Focus Glow */
-#web-search-input, #chat-input, #wiki-search {
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-#web-search-input:focus, #chat-input:focus, #wiki-search:focus {
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
-}
+#mobile-header h2 span { color: var(--amber); }
 </style>
 </head>
 <body>
 
+<!-- Sidebar overlay for mobile -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <!-- Sidebar -->
 <aside id="sidebar">
   <div id="sidebar-header">
-    <div id="logo">secondo<span>cervello</span></div>
-    <div id="logo-sub">knowledge engine</div>
+    <div>
+      <div id="logo">secondo<span>cervello</span></div>
+      <div id="logo-sub">v4 knowledge engine</div>
+    </div>
   </div>
 
   <nav id="nav">
     <div class="nav-section">Main</div>
     <button class="nav-btn active" data-panel="upload">
-      <span class="icon">↑</span><span>Upload</span>
+      <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span><span>Upload</span>
     </button>
     <button class="nav-btn" data-panel="queue">
-      <span class="icon">⚙</span><span>Queue</span>
+      <span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span><span>Queue</span>
     </button>
     <button class="nav-btn" data-panel="wiki">
-      <span class="icon">◈</span><span>Wiki</span>
+      <span class="icon"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span><span>Wiki</span>
     </button>
     <button class="nav-btn" data-panel="query">
-      <span class="icon">◈</span><span>Chat</span>
+      <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span>Chat</span>
     </button>
 
     <div class="nav-section">System</div>
     <button class="nav-btn" data-panel="dash">
-      <span class="icon">▦</span><span>Dashboard</span>
+      <span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></span><span>Dashboard</span>
     </button>
     <button class="nav-btn" data-panel="settings">
-      <span class="icon">⚙</span><span>Settings</span>
+      <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span>Settings</span>
     </button>
   </nav>
 
   <div id="sidebar-footer">
     <div id="status-dot"></div>
-    <span id="status-label">checking…</span>
+    <span id="status-label">checking&hellip;</span>
   </div>
 </aside>
 
 <!-- Main Content -->
 <div id="content">
 
+  <!-- Mobile header -->
+  <div id="mobile-header">
+    <button id="sidebar-toggle" onclick="toggleSidebar()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <h2>secondo<span>cervello</span></h2>
+  </div>
+
   <!-- Upload -->
   <div id="panel-upload" class="panel active">
     <div id="upload-hero">
       <div id="drop-zone">
-        <span class="icon">↑</span>
+        <span class="icon">&#8593;</span>
         <h2>Drop documents here</h2>
-        <p>OCR extracts every detail — text, tables, graphs, infographics —<br/>then Qwen organizes it into your wiki.</p>
+        <p>OCR extracts every detail &mdash; text, tables, graphs, infographics &mdash;<br/>then Qwen organizes it into your wiki.</p>
         <div class="file-types">
           <span class="badge">PDF</span>
           <span class="badge">PNG</span>
           <span class="badge">JPG</span>
+          <span class="badge">MP3</span>
+          <span class="badge">WAV</span>
           <span class="badge">TXT</span>
           <span class="badge">MD</span>
         </div>
-        <input type="file" id="file-input" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.webp" multiple/>
+        <input type="file" id="file-input" accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.webp,.mp3,.wav,.m4a,.flac" multiple/>
+      </div>
+
+      <div id="web-search-section">
+        <h3>
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Web Search
+        </h3>
+        <div id="web-search-row">
+          <input type="text" id="web-search-input" placeholder="Search the web and ingest results&hellip;"/>
+          <button id="web-search-btn">Search &amp; Ingest</button>
+        </div>
       </div>
     </div>
     <div id="recent-uploads">
@@ -1118,23 +1528,23 @@ body {
   <div id="panel-queue" class="panel">
     <div id="queue-header">
       <h2>Processing Queue</h2>
-      <span id="queue-count" style="color:var(--dim);font-size:12px"></span>
+      <span id="queue-count"></span>
     </div>
-    <div id="queue-list"><div style="padding:40px;text-align:center;color:var(--dim)">No jobs yet.</div></div>
+    <div id="queue-list"><div class="queue-empty" style="padding:40px;text-align:center;color:var(--dim)">No jobs yet.</div></div>
   </div>
 
   <!-- Wiki -->
   <div id="panel-wiki" class="panel">
     <div id="wiki-sidebar">
       <div id="wiki-search-bar">
-        <input type="text" id="wiki-search" placeholder="Search pages…"/>
+        <input type="text" id="wiki-search" placeholder="Search pages&hellip;"/>
       </div>
       <div id="wiki-tree">
         <div id="tree-content"><div style="padding:12px;color:var(--dim);font-size:13px">Empty wiki.</div></div>
       </div>
     </div>
     <div id="wiki-content">
-      <div id="wiki-empty"><div class="big">◈</div><p>Select a page from the sidebar</p></div>
+      <div id="wiki-empty"><div class="big">&#9672;</div><p>Select a page from the sidebar</p></div>
     </div>
   </div>
 
@@ -1146,7 +1556,7 @@ body {
     </div>
     <div id="chat-messages"></div>
     <div id="chat-input-row">
-      <textarea id="chat-input" rows="1" placeholder="Ask anything about your wiki…"></textarea>
+      <textarea id="chat-input" rows="1" placeholder="Ask anything about your wiki&hellip;"></textarea>
       <button id="chat-send">Send</button>
     </div>
   </div>
@@ -1154,21 +1564,57 @@ body {
   <!-- Dashboard -->
   <div id="panel-dash" class="panel">
     <div id="dash-header">
-      <h2>Dashboard</h2>
-      <p id="vault-path-display"></p>
+      <div>
+        <h2>Dashboard</h2>
+        <div id="vault-path-display"></div>
+      </div>
+      <div id="revise-section">
+        <button id="btn-revise">
+          <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          Revise &amp; Organize
+        </button>
+        <div id="revise-status"></div>
+        <div id="revise-result"></div>
+      </div>
     </div>
+
     <div id="dash-stats">
-      <div class="stat-card"><div class="stat-label">Total Pages</div><div class="stat-val amber" id="s-total">—</div></div>
-      <div class="stat-card"><div class="stat-label">Sources</div><div class="stat-val blue" id="s-sources">—</div></div>
-      <div class="stat-card"><div class="stat-label">Entities</div><div class="stat-val green" id="s-entities">—</div></div>
-      <div class="stat-card"><div class="stat-label">Concepts</div><div class="stat-val purple" id="s-concepts">—</div></div>
-      <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val green" id="s-done">—</div></div>
-      <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-val" id="s-failed" style="color:var(--red)">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total Pages</div><div class="stat-val amber" id="s-total">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Sources</div><div class="stat-val blue" id="s-sources">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Entities</div><div class="stat-val green" id="s-entities">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Concepts</div><div class="stat-val purple" id="s-concepts">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val green" id="s-done">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-val" id="s-failed" style="color:var(--red)">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Graph Nodes</div><div class="stat-val cyan" id="s-nodes">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Graph Edges</div><div class="stat-val" id="s-edges" style="color:var(--amber2)">&mdash;</div></div>
     </div>
     <div id="category-breakdown">
       <h3>By Category</h3>
       <div id="cat-bars"></div>
     </div>
+
+    <!-- Graph View -->
+    <div id="graph-section">
+      <h3>
+        Knowledge Graph
+        <div class="graph-legend">
+          <span class="graph-legend-item"><span class="graph-legend-dot source"></span>Source</span>
+          <span class="graph-legend-item"><span class="graph-legend-dot entity"></span>Entity</span>
+          <span class="graph-legend-item"><span class="graph-legend-dot concept"></span>Concept</span>
+          <span class="graph-legend-item"><span class="graph-legend-dot moc"></span>MOC</span>
+        </div>
+      </h3>
+      <div id="graph-container">
+        <canvas id="graph-canvas"></canvas>
+        <div id="graph-tooltip"></div>
+        <div id="graph-controls">
+          <button class="graph-ctrl-btn" onclick="graphZoom(1.2)" title="Zoom in">+</button>
+          <button class="graph-ctrl-btn" onclick="graphZoom(0.8)" title="Zoom out">&minus;</button>
+          <button class="graph-ctrl-btn" onclick="graphReset()" title="Reset view">&#8634;</button>
+        </div>
+      </div>
+    </div>
+
     <div id="dash-log">
       <h3>Recent Activity</h3>
       <div id="log-entries"></div>
@@ -1190,12 +1636,32 @@ body {
 
 </div>
 
+<!-- Wikilink preview tooltip -->
+<div id="wikilink-preview">
+  <div class="preview-title"></div>
+  <div class="preview-body"></div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 const jobs = {};
 let currentPagePath = null;
+let reviseActive = false;
+const wikiPageCache = {};   // cache for wikilink previews: path -> {fm, body}
+let searchDebounce = null;  // debounce timer for wiki search
+let graphAnimFrame = null;  // animation frame for graph
+
+// ── Mobile sidebar ─────────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -1205,14 +1671,14 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
     if (btn.dataset.panel === 'wiki') loadTree();
-    if (btn.dataset.panel === 'dash') loadStats();
+    if (btn.dataset.panel === 'dash') { loadStats(); loadGraph(); }
     if (btn.dataset.panel === 'queue') loadJobs();
     if (btn.dataset.panel === 'settings') loadSettings();
+    closeSidebar();
   });
 });
 
 // ── Health check ────────────────────────────────────────────────────────────
-let healthInterval = null;
 async function checkHealth() {
   try {
     const r = await fetch('/api/health');
@@ -1232,8 +1698,7 @@ async function checkHealth() {
   }
 }
 checkHealth();
-// Poll every 60s instead of 30s to reduce spam
-healthInterval = setInterval(checkHealth, 60000);
+setInterval(checkHealth, 60000);
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 const dropZone  = document.getElementById('drop-zone');
@@ -1261,11 +1726,11 @@ async function uploadFiles(files) {
       if (d.error) {
         toast(d.error, 'red');
       } else {
-        toast(`Queued: ${file.name}`);
+        toast('Queued: ' + file.name);
         addRecentUpload(file.name);
       }
     } catch (e) {
-      toast(`Upload failed: ${e.message}`, 'red');
+      toast('Upload failed: ' + e.message, 'red');
     }
   }
   // Switch to queue
@@ -1277,66 +1742,153 @@ function addRecentUpload(name) {
   const item = document.createElement('div');
   item.className = 'upload-item';
   const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  item.innerHTML = `<span class="fname">${escHtml(name)}</span><span class="time">${time}</span>`;
+  item.innerHTML = '<span class="fname">' + escHtml(name) + '</span><span class="time">' + time + '</span>';
   list.prepend(item);
-  // Keep only last 10
   while (list.children.length > 10) list.lastChild.remove();
 }
 
+// ── Web Search ──────────────────────────────────────────────────────────────
+const webSearchInput = document.getElementById('web-search-input');
+const webSearchBtn   = document.getElementById('web-search-btn');
+
+webSearchBtn.addEventListener('click', doWebSearch);
+webSearchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); doWebSearch(); }
+});
+
+async function doWebSearch() {
+  const query = webSearchInput.value.trim();
+  if (!query) return;
+  webSearchBtn.disabled = true;
+  webSearchBtn.textContent = 'Searching\u2026';
+  try {
+    const r = await fetch('/api/web-search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query, num: 5 }),
+    });
+    const d = await r.json();
+    if (d.error) {
+      toast('Web search error: ' + d.error, 'red');
+    } else {
+      toast('Web search queued: ' + query);
+      addRecentUpload('web: ' + query);
+      // Switch to queue panel to show progress
+      document.querySelector('[data-panel="queue"]').click();
+    }
+  } catch (e) {
+    toast('Web search failed: ' + e.message, 'red');
+  } finally {
+    webSearchBtn.disabled = false;
+    webSearchBtn.textContent = 'Search & Ingest';
+    webSearchInput.value = '';
+  }
+}
+
 // ── SSE stream ──────────────────────────────────────────────────────────────
+let sseRetries = 0;
 function connectSSE() {
   const es = new EventSource('/api/events');
   es.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    handleEvent(msg);
+    sseRetries = 0;
+    try {
+      const msg = JSON.parse(e.data);
+      handleEvent(msg);
+    } catch(err) {}
   };
-  es.onerror = () => setTimeout(connectSSE, 3000);
+  es.onerror = () => {
+    sseRetries++;
+    const delay = Math.min(3000 * Math.pow(1.5, Math.min(sseRetries, 8)), 30000);
+    setTimeout(connectSSE, delay);
+  };
 }
 connectSSE();
 
 function handleEvent(msg) {
-  if (!msg.job_id) return;
-  const { job_id, event, data } = msg;
+  // Handle job-based events
+  if (msg.job_id) {
+    const { job_id, event, data } = msg;
 
-  if (!jobs[job_id]) {
-    jobs[job_id] = { id: job_id, status: 'queued', step: 'queued', log: [], progress: 0, total: 0 };
-  }
-  const job = jobs[job_id];
-
-  if (event === 'status') {
-    job.status = data.status;
-    job.step   = data.step || job.step;
-    if (data.detail) job.log.push({ text: data.detail, cls: 'amber' });
-  } else if (event === 'progress') {
-    job.step     = data.step;
-    job.progress = data.done;
-    job.total    = data.total;
-  } else if (event === 'page_written') {
-    job.log.push({ text: `wrote ${data.path}`, cls: 'green' });
-  } else if (event === 'done') {
-    job.status = 'done';
-    job.progress = job.total || 1;
-    job.log.push({ text: `${data.pages_written} pages written to wiki`, cls: 'green' });
-    toast(`Done: ${job.filename || job_id.slice(0,8)}`);
-    // Refresh tree if wiki panel is active
-    if (document.getElementById('panel-wiki').classList.contains('active')) {
-      loadTree();
+    if (!jobs[job_id]) {
+      jobs[job_id] = { id: job_id, status: 'queued', step: 'queued', log: [], progress: 0, total: 0 };
     }
-  } else if (event === 'error') {
-    job.status = 'failed';
-    job.log.push({ text: `${data.message}`, cls: 'red' });
-    toast(`Failed: ${data.message}`, 'red');
-  } else if (event === 'warning') {
-    job.log.push({ text: `Warning: ${data.detail}`, cls: 'amber' });
+    const job = jobs[job_id];
+
+    if (event === 'status') {
+      job.status = data.status;
+      job.step   = data.step || job.step;
+      if (data.detail) job.log.push({ text: data.detail, cls: 'amber' });
+    } else if (event === 'progress') {
+      job.step     = data.step;
+      job.progress = data.done;
+      job.total    = data.total;
+    } else if (event === 'page_written') {
+      job.log.push({ text: 'wrote ' + data.path, cls: 'green' });
+    } else if (event === 'done') {
+      job.status = 'done';
+      job.progress = job.total || 1;
+      job.log.push({ text: (data.pages_written || 0) + ' pages written to wiki', cls: 'green' });
+      toast('Done: ' + (job.filename || job_id.slice(0,8)));
+      if (document.getElementById('panel-wiki').classList.contains('active')) {
+        loadTree();
+      }
+    } else if (event === 'error') {
+      job.status = 'failed';
+      job.log.push({ text: String(data.message || 'Unknown error'), cls: 'red' });
+      toast('Failed: ' + (data.message || 'Unknown'), 'red');
+    } else if (event === 'warning') {
+      job.log.push({ text: 'Warning: ' + data.detail, cls: 'amber' });
+    }
+    // web_ingest event
+    else if (event === 'web_ingest') {
+      job.log.push({ text: 'web ingest: ' + (data.url || data.detail || 'processing'), cls: 'cyan' });
+    }
+
+    renderJobCard(job_id);
   }
 
-  renderJobCard(job_id);
+  // Handle revise events (may not have job_id)
+  if (msg.event === 'revise_progress') {
+    const data = msg.data || {};
+    const statusEl = document.getElementById('revise-status');
+    if (statusEl && reviseActive) {
+      statusEl.textContent = 'Reviewing: ' + (data.page || data.current || '\u2026');
+    }
+  }
+  if (msg.event === 'revise_done' || (msg.event === 'done' && msg.data && msg.data.reviewed !== undefined)) {
+    reviseActive = false;
+    const statusEl = document.getElementById('revise-status');
+    const resultEl = document.getElementById('revise-result');
+    const btn = document.getElementById('btn-revise');
+    if (btn) btn.disabled = false;
+    if (statusEl) statusEl.textContent = '';
+    const d = msg.data || {};
+    if (resultEl) {
+      resultEl.style.display = 'block';
+      resultEl.innerHTML =
+        'Reviewed: <strong>' + (d.reviewed || 0) + '</strong> &middot; ' +
+        'Updated: <strong>' + (d.updated || 0) + '</strong> &middot; ' +
+        'Links added: <strong>' + (d.links_added || 0) + '</strong> &middot; ' +
+        'Moved: <strong>' + (d.moved || 0) + '</strong>';
+    }
+    toast('Revise & Organize complete');
+    // Refresh stats and graph
+    loadStats();
+    loadGraph();
+  }
+
+  // task_done event
+  if (msg.event === 'task_done') {
+    const data = msg.data || {};
+    toast('Task done: ' + (data.name || data.task || 'completed'));
+  }
 }
 
 function renderJobCard(job_id) {
   const job  = jobs[job_id];
   const list = document.getElementById('queue-list');
-  list.querySelector('[style*="No jobs"]')?.remove();
+  const emptyEl = list.querySelector('.queue-empty');
+  if (emptyEl) emptyEl.remove();
 
   let card = document.getElementById('job-' + job_id);
   if (!card) {
@@ -1345,81 +1897,86 @@ function renderJobCard(job_id) {
     card.className = 'job-card';
     list.prepend(card);
   }
-  card.className = `job-card ${job.status}`;
+  card.className = 'job-card ' + job.status;
 
   const pct  = job.total ? Math.round(job.progress / job.total * 100) : (job.status === 'done' ? 100 : 0);
   const name = job.filename || job_id.slice(0, 12);
   const step = stepLabel(job.step);
-  const logHtml = job.log.slice(-8).map(l => `<div class="entry ${l.cls}">${escHtml(l.text)}</div>`).join('');
+  const logHtml = job.log.slice(-8).map(l => '<div class="entry ' + l.cls + '">' + escHtml(l.text) + '</div>').join('');
 
-  card.innerHTML = `
-    <div class="job-top">
-      <span class="job-name" title="${escHtml(name)}">${escHtml(name)}</span>
-      <span class="job-status ${job.status}">${job.status}</span>
-    </div>
-    <div class="job-step">${step}</div>
-    <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-    <div class="job-log">${logHtml}</div>
-  `;
+  card.innerHTML =
+    '<div class="job-top">' +
+      '<span class="job-name" title="' + escHtml(name) + '">' + escHtml(name) + '</span>' +
+      '<span class="job-status ' + job.status + '">' + job.status + '</span>' +
+    '</div>' +
+    '<div class="job-step">' + step + '</div>' +
+    '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>' +
+    '<div class="job-log">' + logHtml + '</div>';
 }
 
 function stepLabel(step) {
   const map = {
-    queued:       'Waiting in queue',
-    starting:     'Initializing...',
-    ocr:          'Running OCR on pages',
-    reading:      'Reading text file',
-    enriching:    'Qwen is processing the document',
-    llm_enriching:'Qwen is creating wiki pages',
-    done:         'Complete',
-    error:        'Error occurred',
+    queued:        'Waiting in queue',
+    starting:      'Initializing\u2026',
+    ocr:           'Running OCR on pages',
+    reading:       'Reading text file',
+    enriching:     'Qwen is processing the document',
+    llm_enriching: 'Qwen is creating wiki pages',
+    transcribing:  'Transcribing audio',
+    web_scraping:  'Scraping web content',
+    web_ingesting: 'Ingesting web search results',
+    done:          'Complete',
+    error:         'Error occurred',
   };
-  return map[step] || step || '—';
+  return map[step] || step || '\u2014';
 }
 
 // ── Load jobs from DB ────────────────────────────────────────────────────────
 async function loadJobs() {
-  const rows = await (await fetch('/api/jobs')).json();
-  rows.forEach(r => {
-    if (!jobs[r.id]) {
-      jobs[r.id] = { id: r.id, filename: r.filename, status: r.status,
-                     step: r.step, log: [], progress: r.progress || 0, total: r.total || 0 };
-    }
-    renderJobCard(r.id);
-  });
-  const count = document.getElementById('queue-count');
-  if (count) count.textContent = `${rows.length} jobs`;
+  try {
+    const rows = await (await fetch('/api/jobs')).json();
+    rows.forEach(r => {
+      if (!jobs[r.id]) {
+        jobs[r.id] = { id: r.id, filename: r.filename, status: r.status,
+                       step: r.step, log: [], progress: r.progress || 0, total: r.total || 0 };
+      }
+      renderJobCard(r.id);
+    });
+    const count = document.getElementById('queue-count');
+    if (count) count.textContent = rows.length + ' jobs';
+  } catch(e) {}
 }
 
 // ── Wiki tree ────────────────────────────────────────────────────────────────
 async function loadTree() {
-  const tree = await (await fetch('/api/wiki/tree')).json();
-  const container = document.getElementById('tree-content');
-  container.innerHTML = '';
-  if (!tree.children || tree.children.length === 0) {
-    container.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:13px">Empty wiki. Upload a document first.</div>';
-    return;
+  try {
+    const tree = await (await fetch('/api/wiki/tree')).json();
+    const container = document.getElementById('tree-content');
+    container.innerHTML = '';
+    if (!tree.children || tree.children.length === 0) {
+      container.innerHTML = '<div style="padding:12px;color:var(--dim);font-size:13px">Empty wiki. Upload a document first.</div>';
+      return;
+    }
+    renderTree(tree.children, container, '');
+  } catch(e) {
+    document.getElementById('tree-content').innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px">Error loading tree.</div>';
   }
-  renderTree(tree.children, container, '');
 }
 
 function renderTree(nodes, container, base) {
-  // Sort: dirs first, then files, alphabetically
-  const dirs  = nodes.filter(n => n.type === 'dir');
-  const files = nodes.filter(n => n.type === 'file');
+  const dirs  = nodes.filter(n => n.type === 'dir').sort((a,b) => a.name.localeCompare(b.name));
+  const files = nodes.filter(n => n.type === 'file').sort((a,b) => a.name.localeCompare(b.name));
 
   for (const dir of dirs) {
     const dirEl = document.createElement('div');
     dirEl.className = 'tree-dir';
     const childNodes = dir.children || [];
-    const hasFiles = childNodes.some(c => c.type === 'file') || childNodes.some(c => c.type === 'dir' && (c.children || []).length > 0);
-    if (!hasFiles) {
-      dirEl.style.opacity = '0.4';
-    }
+    const hasContent = childNodes.some(c => c.type === 'file') || childNodes.some(c => c.type === 'dir' && (c.children || []).length > 0);
+    if (!hasContent) dirEl.style.opacity = '0.4';
 
     const arrow = document.createElement('span');
     arrow.className = 'arrow';
-    arrow.textContent = '▼';
+    arrow.textContent = '\u25BC';
     dirEl.appendChild(arrow);
     dirEl.appendChild(document.createTextNode(' ' + dir.name));
 
@@ -1443,36 +2000,161 @@ function renderTree(nodes, container, base) {
     const name = file.name.replace('.md', '');
     item.textContent = name;
     item.dataset.path = (base + file.name);
+    item.dataset.name = name.toLowerCase();
     item.addEventListener('click', () => loadPage(item.dataset.path, item));
     container.appendChild(item);
   }
 }
 
-// ── Wiki search ──────────────────────────────────────────────────────────────
-document.getElementById('wiki-search').addEventListener('input', debounce(async function() {
-  const q = this.value.trim().toLowerCase();
-  const items = document.querySelectorAll('.tree-item');
+// ── Wiki search (with /api/v1/search integration) ──────────────────────────
+document.getElementById('wiki-search').addEventListener('input', function() {
+  const q = this.value.trim();
+
+  clearTimeout(searchDebounce);
+
   if (!q) {
-    items.forEach(i => i.style.display = '');
+    // Reset: show all tree items, hide search results
+    const items = document.querySelectorAll('.tree-item');
+    const dirs  = document.querySelectorAll('.tree-dir');
+    const dirChildren = document.querySelectorAll('.tree-dir-children');
+    items.forEach(i => i.classList.remove('hidden'));
+    dirs.forEach(d => d.classList.remove('collapsed'));
+    dirChildren.forEach(c => c.style.display = '');
+    // Remove any search results overlay
+    const searchResultsEl = document.getElementById('wiki-search-results');
+    if (searchResultsEl) searchResultsEl.remove();
+    // Show the wiki-empty or wiki-page if was visible
     return;
   }
-  items.forEach(i => {
-    const text = i.textContent.toLowerCase();
-    const path = (i.dataset.path || '').toLowerCase();
-    i.style.display = (text.includes(q) || path.includes(q)) ? '' : 'none';
-  });
-}, 200));
 
+  // Tree filter (instant)
+  const ql = q.toLowerCase();
+  const items = document.querySelectorAll('.tree-item');
+  const dirs  = document.querySelectorAll('.tree-dir');
+  const dirChildren = document.querySelectorAll('.tree-dir-children');
+  dirs.forEach(d => d.classList.remove('collapsed'));
+  dirChildren.forEach(c => c.style.display = '');
+  items.forEach(i => {
+    const text = (i.dataset.name || i.textContent).toLowerCase();
+    const path = (i.dataset.path || '').toLowerCase();
+    const match = text.includes(ql) || path.includes(ql);
+    i.classList.toggle('hidden', !match);
+  });
+
+  // Debounced full-text search via /api/v1/search
+  searchDebounce = setTimeout(() => doWikiSearch(q), 300);
+});
+
+async function doWikiSearch(query) {
+  try {
+    const r = await fetch('/api/v1/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query: query, k: 10 }),
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const results = data.results || [];
+    if (results.length === 0) return;
+
+    // Show search results in wiki-content area
+    const content = document.getElementById('wiki-content');
+    let searchEl = document.getElementById('wiki-search-results');
+
+    if (!searchEl) {
+      searchEl = document.createElement('div');
+      searchEl.id = 'wiki-search-results';
+      searchEl.className = 'search-results';
+      content.prepend(searchEl);
+    }
+
+    let html = '<h3>Search Results: ' + escHtml(query) + '</h3>';
+    for (const result of results) {
+      const path = result.path || result.file || '';
+      const name = path.split('/').pop().replace('.md', '');
+      const score = result.score !== undefined ? result.score.toFixed(3) : '';
+      const snippet = highlightTerms(result.snippet || result.text || '', query);
+
+      html += '<div class="search-result-item" data-path="' + escHtml(path) + '">' +
+        '<div class="search-result-title">' + escHtml(name) + '</div>' +
+        '<div class="search-result-path">' + escHtml(path) + '</div>' +
+        '<div class="search-result-snippet">' + snippet + '</div>' +
+        (score ? '<div class="search-result-score">relevance: ' + score + '</div>' : '') +
+      '</div>';
+    }
+    searchEl.innerHTML = html;
+
+    // Make result items clickable
+    searchEl.querySelectorAll('.search-result-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const path = item.dataset.path;
+        if (path) {
+          // Remove search results
+          searchEl.remove();
+          // Find and click the tree item
+          const treeItem = document.querySelector('.tree-item[data-path="' + path + '"]');
+          if (treeItem) {
+            // Expand parent dirs
+            let parent = treeItem.parentElement;
+            while (parent) {
+              if (parent.classList && parent.classList.contains('tree-dir-children')) {
+                parent.style.display = '';
+                const prevDir = parent.previousElementSibling;
+                if (prevDir && prevDir.classList.contains('tree-dir')) {
+                  prevDir.classList.remove('collapsed');
+                }
+              }
+              parent = parent.parentElement;
+            }
+            treeItem.click();
+          } else {
+            loadPage(path, null);
+          }
+        }
+      });
+    });
+  } catch(e) {
+    // Silently fail for search - tree filter still works
+  }
+}
+
+function highlightTerms(text, query) {
+  if (!text || !query) return escHtml(text || '');
+  const escaped = escHtml(text);
+  const terms = query.split(/\s+/).filter(t => t.length > 0);
+  let result = escaped;
+  for (const term of terms) {
+    const re = new RegExp('(' + escRegex(term) + ')', 'gi');
+    result = result.replace(re, '<mark>$1</mark>');
+  }
+  return result;
+}
+
+function escRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ── Load wiki page ───────────────────────────────────────────────────────────
 async function loadPage(path, el) {
+  // Remove any search results overlay
+  const searchResultsEl = document.getElementById('wiki-search-results');
+  if (searchResultsEl) searchResultsEl.remove();
+
   document.querySelectorAll('.tree-item').forEach(i => i.classList.remove('active'));
-  el?.classList.add('active');
+  if (el) el.classList.add('active');
   currentPagePath = path;
   const content = document.getElementById('wiki-content');
-  content.innerHTML = '<div style="padding:32px 40px;color:var(--dim)">Loading…</div>';
+  content.innerHTML = '<div style="padding:32px 40px;color:var(--dim)">Loading\u2026</div>';
 
   try {
     const r = await (await fetch('/api/wiki/page?path=' + encodeURIComponent(path))).json();
     const rawMd = r.content || '';
+
+    // Cache for wikilink previews
+    wikiPageCache[path] = {
+      fm: parseFrontmatter(rawMd),
+      body: stripFrontmatter(rawMd)
+    };
 
     // Extract frontmatter for metadata display
     const fm = parseFrontmatter(rawMd);
@@ -1481,44 +2163,190 @@ async function loadPage(path, el) {
     const html = marked.parse(processedMd);
 
     let metaHtml = '';
-    if (fm.title || fm.type || fm.tags) {
+    if (fm.title || fm.type || fm.tags || fm.category) {
       metaHtml = '<div id="page-meta">';
-      if (fm.type) metaHtml += `<span class="meta-tag ${fm.type}">${escHtml(fm.type)}</span>`;
-      if (fm.category) metaHtml += `<span class="meta-tag">${escHtml(fm.category)}</span>`;
+      if (fm.type) metaHtml += '<span class="meta-tag ' + escHtml(fm.type) + '">' + escHtml(fm.type) + '</span>';
+      if (fm.category) metaHtml += '<span class="meta-tag">' + escHtml(fm.category) + '</span>';
       if (fm.tags) {
         const tags = Array.isArray(fm.tags) ? fm.tags : [fm.tags];
-        tags.forEach(t => { metaHtml += `<span class="meta-tag">${escHtml(String(t))}</span>`; });
+        tags.forEach(t => { metaHtml += '<span class="meta-tag">' + escHtml(String(t)) + '</span>'; });
       }
-      metaHtml += `<button id="btn-reprocess" onclick="reprocessPage('${escHtml(path)}')">Re-process</button>`;
+      metaHtml += '<button id="btn-reprocess" onclick="reprocessPage(\'' + escHtml(path).replace(/'/g, "\\'") + '\')">Re-process</button>';
       metaHtml += '</div>';
+    } else {
+      metaHtml = '<div id="page-meta"><button id="btn-reprocess" onclick="reprocessPage(\'' + escHtml(path).replace(/'/g, "\\'") + '\')">Re-process</button></div>';
     }
 
-    content.innerHTML = `<div id="wiki-page">${metaHtml}<div class="md-body">${html}</div></div>`;
+    content.innerHTML = '<div id="wiki-page">' + metaHtml + '<div class="md-body">' + html + '</div></div>';
 
-    // Activate wikilink clicks
-    content.querySelectorAll('.wikilink').forEach(a => {
-      a.addEventListener('click', e => {
-        e.preventDefault();
-        const target = a.dataset.target;
-        // Search all tree items for a match
-        const items = document.querySelectorAll('.tree-item');
-        let found = false;
-        for (const item of items) {
-          const itemText = item.textContent.toLowerCase();
-          const itemPath = (item.dataset.path || '').toLowerCase();
-          if (itemText === target.toLowerCase() || itemPath.includes(target.toLowerCase().replace(/\s+/g, '-'))) {
-            item.click();
-            found = true;
-            break;
+    // Activate wikilink clicks and hover previews
+    activateWikilinks(content);
+  } catch(e) {
+    content.innerHTML = '<div style="padding:32px 40px;color:var(--red)">Failed to load page.</div>';
+  }
+}
+
+function activateWikilinks(root) {
+  root.querySelectorAll('.wikilink').forEach(a => {
+    // Click handler
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = a.dataset.target;
+      navigateToWikiPage(target);
+    });
+
+    // Hover preview
+    a.addEventListener('mouseenter', e => {
+      showWikilinkPreview(a, a.dataset.target);
+    });
+    a.addEventListener('mouseleave', () => {
+      hideWikilinkPreview();
+    });
+  });
+}
+
+// ── Wikilink hover preview ──────────────────────────────────────────────────
+const previewEl = document.getElementById('wikilink-preview');
+let previewTimeout = null;
+
+async function showWikilinkPreview(linkEl, target) {
+  clearTimeout(previewTimeout);
+
+  // Position the preview
+  const rect = linkEl.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = rect.left;
+
+  // Prevent going off-screen right
+  if (left + 360 > window.innerWidth) {
+    left = window.innerWidth - 370;
+  }
+  if (left < 8) left = 8;
+
+  // Prevent going off-screen bottom
+  if (top + 200 > window.innerHeight) {
+    top = rect.top - 206;
+  }
+
+  previewEl.style.top = top + 'px';
+  previewEl.style.left = left + 'px';
+
+  // Find the page path from the tree
+  const pagePath = findPagePath(target);
+
+  if (!pagePath) {
+    previewEl.querySelector('.preview-title').textContent = target;
+    previewEl.querySelector('.preview-title').innerHTML = escHtml(target) + ' <span class="preview-type" style="color:var(--dim);border-color:var(--dim)">not found</span>';
+    previewEl.querySelector('.preview-body').textContent = 'Page does not exist in the wiki yet.';
+    previewEl.classList.add('visible');
+    return;
+  }
+
+  // Check cache first
+  if (wikiPageCache[pagePath]) {
+    const cached = wikiPageCache[pagePath];
+    renderPreview(target, cached.fm, cached.body);
+    previewEl.classList.add('visible');
+    return;
+  }
+
+  // Show loading state
+  previewEl.querySelector('.preview-title').textContent = target;
+  previewEl.querySelector('.preview-body').textContent = 'Loading preview\u2026';
+  previewEl.classList.add('visible');
+
+  // Fetch the page
+  previewTimeout = setTimeout(async () => {
+    try {
+      const r = await fetch('/api/wiki/page?path=' + encodeURIComponent(pagePath));
+      const d = await r.json();
+      const rawMd = d.content || '';
+      const fm = parseFrontmatter(rawMd);
+      const body = stripFrontmatter(rawMd);
+
+      wikiPageCache[pagePath] = { fm, body };
+
+      renderPreview(target, fm, body);
+    } catch(e) {
+      previewEl.querySelector('.preview-body').textContent = 'Could not load preview.';
+    }
+  }, 150);
+}
+
+function renderPreview(target, fm, body) {
+  const typeTag = fm.type ? ' <span class="preview-type ' + escHtml(fm.type) + '">' + escHtml(fm.type) + '</span>' : '';
+  previewEl.querySelector('.preview-title').innerHTML = escHtml(fm.title || target) + typeTag;
+
+  // Get first ~200 chars of plain text from body
+  const plainText = body
+    .replace(/^#+\s+.*/gm, '')   // headings
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')  // wikilinks
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')  // images
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // links
+    .replace(/[*_~`#>|]/g, '')    // markdown chars
+    .replace(/\n{2,}/g, ' ')      // double newlines
+    .replace(/\n/g, ' ')
+    .trim()
+    .slice(0, 200);
+
+  previewEl.querySelector('.preview-body').textContent = plainText + (plainText.length >= 200 ? '\u2026' : '');
+}
+
+function hideWikilinkPreview() {
+  clearTimeout(previewTimeout);
+  previewEl.classList.remove('visible');
+}
+
+function findPagePath(target) {
+  const items = document.querySelectorAll('.tree-item');
+  const targetLower = target.toLowerCase();
+  const targetSlug = targetLower.replace(/\s+/g, '-');
+
+  for (const item of items) {
+    const itemText = (item.dataset.name || item.textContent).toLowerCase();
+    const itemPath = (item.dataset.path || '').toLowerCase();
+    if (itemText === targetLower || itemText === targetSlug || itemPath.includes(targetSlug + '.md') || itemPath.includes(targetLower)) {
+      return item.dataset.path;
+    }
+  }
+  return null;
+}
+
+function navigateToWikiPage(target) {
+  // Switch to wiki panel if not already there
+  const wikiPanel = document.getElementById('panel-wiki');
+  if (!wikiPanel.classList.contains('active')) {
+    document.querySelector('[data-panel="wiki"]').click();
+  }
+
+  const items = document.querySelectorAll('.tree-item');
+  let found = false;
+  const targetLower = target.toLowerCase();
+  const targetSlug = targetLower.replace(/\s+/g, '-');
+
+  for (const item of items) {
+    const itemText = (item.dataset.name || item.textContent).toLowerCase();
+    const itemPath = (item.dataset.path || '').toLowerCase();
+    if (itemText === targetLower || itemText === targetSlug || itemPath.includes(targetSlug + '.md') || itemPath.includes(targetLower)) {
+      // Expand parent dirs if collapsed
+      let parent = item.parentElement;
+      while (parent) {
+        if (parent.classList && parent.classList.contains('tree-dir-children')) {
+          parent.style.display = '';
+          const prevDir = parent.previousElementSibling;
+          if (prevDir && prevDir.classList.contains('tree-dir')) {
+            prevDir.classList.remove('collapsed');
           }
         }
-        if (!found) {
-          toast(`Page not found: ${target}`, 'amber');
-        }
-      });
-    });
-  } catch {
-    content.innerHTML = '<div style="padding:32px 40px;color:var(--red)">Failed to load page.</div>';
+        parent = parent.parentElement;
+      }
+      item.click();
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    toast('Page not found: ' + target, 'amber');
   }
 }
 
@@ -1533,7 +2361,6 @@ function parseFrontmatter(md) {
     if (idx > 0) {
       const key = line.slice(0, idx).trim();
       let val = line.slice(idx + 1).trim();
-      // Simple array parsing
       if (val.startsWith('[') && val.endsWith(']')) {
         val = val.slice(1, -1).split(',').map(s => s.trim().replace(/"/g, '').replace(/'/g, ''));
       }
@@ -1551,14 +2378,14 @@ function stripFrontmatter(md) {
 }
 
 function processWikilinks(md) {
-  return md.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
-    return `<a class="wikilink" data-target="${escHtml(name)}" href="#">${escHtml(name)}</a>`;
+  return md.replace(/\[\[([^\]]+)\]\]/g, function(_, name) {
+    return '<a class="wikilink" data-target="' + escHtml(name) + '" href="#">' + escHtml(name) + '</a>';
   });
 }
 
 async function reprocessPage(path) {
   const btn = document.getElementById('btn-reprocess');
-  if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Processing\u2026'; }
   try {
     const r = await fetch('/api/wiki/reprocess', {
       method: 'POST',
@@ -1567,15 +2394,16 @@ async function reprocessPage(path) {
     });
     const d = await r.json();
     if (d.error) {
-      toast(`Error: ${d.error}`, 'red');
+      toast('Error: ' + d.error, 'red');
     } else {
       toast('Page re-processed successfully');
-      // Reload the page
-      const item = document.querySelector(`.tree-item[data-path="${path}"]`);
+      // Invalidate cache
+      delete wikiPageCache[path];
+      const item = document.querySelector('.tree-item[data-path="' + path + '"]');
       if (item) item.click();
     }
   } catch(e) {
-    toast(`Error: ${e.message}`, 'red');
+    toast('Error: ' + e.message, 'red');
   }
 }
 
@@ -1626,14 +2454,23 @@ async function sendQuery() {
           const d = JSON.parse(line.slice(5).trim());
           if (d.chunk) {
             full += d.chunk;
-            body.innerHTML = `<div class="md-body">${marked.parse(processWikilinks(full))}</div>`;
+            body.innerHTML = '<div class="md-body">' + marked.parse(processWikilinks(full)) + '</div>';
+            // Make wikilinks clickable in chat
+            body.querySelectorAll('.wikilink').forEach(a => {
+              a.addEventListener('click', e => {
+                e.preventDefault();
+                navigateToWikiPage(a.dataset.target);
+              });
+              a.addEventListener('mouseenter', () => showWikilinkPreview(a, a.dataset.target));
+              a.addEventListener('mouseleave', () => hideWikilinkPreview());
+            });
             chatMessages.scrollTop = chatMessages.scrollHeight;
           }
         } catch(e) {}
       }
     }
   } catch(e) {
-    body.textContent = `Error: ${e.message}`;
+    body.textContent = 'Error: ' + e.message;
   } finally {
     chatSend.disabled = false;
     chatInput.focus();
@@ -1642,13 +2479,12 @@ async function sendQuery() {
 
 function appendMsg(role, text) {
   const wrap = document.createElement('div');
-  wrap.className = `msg ${role}`;
+  wrap.className = 'msg ' + role;
   const time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   const roleLabel = role === 'user' ? 'You' : 'Wiki';
-  wrap.innerHTML = `
-    <div class="msg-meta"><span class="role">${roleLabel}</span> · ${time}</div>
-    <div class="msg-body">${text}</div>
-  `;
+  wrap.innerHTML =
+    '<div class="msg-meta"><span class="role">' + roleLabel + '</span> &middot; ' + time + '</div>' +
+    '<div class="msg-body">' + text + '</div>';
   chatMessages.appendChild(wrap);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   return wrap;
@@ -1656,53 +2492,114 @@ function appendMsg(role, text) {
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 async function loadStats() {
-  const d = await (await fetch('/api/stats')).json();
-  document.getElementById('s-total').textContent    = d.wiki.total;
-  document.getElementById('s-sources').textContent  = d.wiki.sources;
-  document.getElementById('s-entities').textContent = d.wiki.entities;
-  document.getElementById('s-concepts').textContent = d.wiki.concepts;
-  document.getElementById('s-done').textContent     = d.jobs.done;
-  document.getElementById('s-failed').textContent   = d.jobs.failed;
-  document.getElementById('vault-path-display').textContent = d.vault_path || '';
+  try {
+    const d = await (await fetch('/api/stats')).json();
+    document.getElementById('s-total').textContent    = d.wiki.total;
+    document.getElementById('s-sources').textContent  = d.wiki.sources;
+    document.getElementById('s-entities').textContent = d.wiki.entities;
+    document.getElementById('s-concepts').textContent = d.wiki.concepts;
+    document.getElementById('s-done').textContent     = d.jobs.done;
+    document.getElementById('s-failed').textContent   = d.jobs.failed;
 
-  // Category breakdown
-  const catEl = document.getElementById('cat-bars');
-  const cats = d.wiki.categories || {};
-  const maxCat = Math.max(1, ...Object.values(cats));
-  catEl.innerHTML = '';
-  for (const [slug, count] of Object.entries(cats)) {
-    if (count === 0) continue;
-    const pct = (count / maxCat * 100).toFixed(0);
-    catEl.innerHTML += `
-      <div class="cat-row">
-        <span class="cat-name">${escHtml(slug)}</span>
-        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%"></div></div>
-        <span class="cat-count">${count}</span>
-      </div>`;
-  }
+    // Adjacency stats
+    const adj = d.wiki.adjacency || d.adjacency || {};
+    document.getElementById('s-nodes').textContent = adj.nodes != null ? adj.nodes : d.wiki.total || '\u2014';
+    document.getElementById('s-edges').textContent = adj.edges != null ? adj.edges : '\u2014';
 
-  // Recent log
-  const el = document.getElementById('log-entries');
-  if (d.recent_log.length) {
-    el.innerHTML = d.recent_log
-      .map(l => `<div class="log-entry"><strong>${escHtml(l)}</strong></div>`)
-      .join('');
-  } else {
-    el.innerHTML = '<div style="color:var(--dim);font-size:13px">No activity yet.</div>';
+    // Vault path
+    const vpEl = document.getElementById('vault-path-display');
+    if (vpEl) vpEl.textContent = d.vault_path || '';
+
+    // Category breakdown
+    const catEl = document.getElementById('cat-bars');
+    const cats = d.wiki.categories || {};
+    const maxCat = Math.max(1, ...Object.values(cats));
+    catEl.innerHTML = '';
+    for (const [slug, count] of Object.entries(cats)) {
+      if (count === 0) continue;
+      const pct = (count / maxCat * 100).toFixed(0);
+      catEl.innerHTML +=
+        '<div class="cat-row">' +
+          '<span class="cat-name">' + escHtml(slug) + '</span>' +
+          '<div class="cat-bar-bg"><div class="cat-bar-fill" style="width:' + pct + '%"></div></div>' +
+          '<span class="cat-count">' + count + '</span>' +
+        '</div>';
+    }
+
+    // Recent log
+    const el = document.getElementById('log-entries');
+    if (d.recent_log && d.recent_log.length) {
+      el.innerHTML = d.recent_log
+        .map(l => '<div class="log-entry"><strong>' + escHtml(l) + '</strong></div>')
+        .join('');
+    } else {
+      el.innerHTML = '<div style="color:var(--dim);font-size:13px">No activity yet.</div>';
+    }
+  } catch(e) {
+    console.error('Failed to load stats:', e);
   }
 }
 
+// ── Revise & Organize ────────────────────────────────────────────────────────
+document.getElementById('btn-revise').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-revise');
+  const statusEl = document.getElementById('revise-status');
+  const resultEl = document.getElementById('revise-result');
+
+  if (reviseActive) return;
+  reviseActive = true;
+  btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Starting revision\u2026';
+  if (resultEl) resultEl.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/revise', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) {
+      toast('Revise error: ' + d.error, 'red');
+      reviseActive = false;
+      btn.disabled = false;
+      if (statusEl) statusEl.textContent = '';
+      return;
+    }
+    // If the response includes results directly (non-SSE mode)
+    if (d.reviewed !== undefined) {
+      reviseActive = false;
+      btn.disabled = false;
+      if (statusEl) statusEl.textContent = '';
+      if (resultEl) {
+        resultEl.style.display = 'block';
+        resultEl.innerHTML =
+          'Reviewed: <strong>' + (d.reviewed || 0) + '</strong> &middot; ' +
+          'Updated: <strong>' + (d.updated || 0) + '</strong> &middot; ' +
+          'Links added: <strong>' + (d.links_added || 0) + '</strong> &middot; ' +
+          'Moved: <strong>' + (d.moved || 0) + '</strong>';
+      }
+      toast('Revise & Organize complete');
+      loadStats();
+      loadGraph();
+    }
+    // Otherwise progress will come through SSE
+  } catch(e) {
+    toast('Revise failed: ' + e.message, 'red');
+    reviseActive = false;
+    btn.disabled = false;
+    if (statusEl) statusEl.textContent = '';
+  }
+});
+
+// ── Lint ─────────────────────────────────────────────────────────────────────
 document.getElementById('lint-btn').addEventListener('click', async () => {
   const btn = document.getElementById('lint-btn');
   const rep = document.getElementById('lint-report');
   btn.disabled = true;
-  btn.textContent = 'Running…';
-  rep.innerHTML = '<span style="color:var(--dim)">Linting wiki, please wait…</span>';
+  btn.textContent = 'Running\u2026';
+  rep.innerHTML = '<span style="color:var(--dim)">Linting wiki, please wait\u2026</span>';
   try {
     const r = await (await fetch('/api/lint', {method:'POST'})).json();
-    rep.innerHTML = `<div class="md-body">${marked.parse(r.report)}</div>`;
+    rep.innerHTML = '<div class="md-body">' + marked.parse(r.report || '') + '</div>';
   } catch(e) {
-    rep.textContent = `Error: ${e.message}`;
+    rep.textContent = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
     btn.textContent = 'Run Lint Check';
@@ -1714,91 +2611,495 @@ async function loadSettings() {
   try {
     const cfg = await (await fetch('/api/config')).json();
     const groups = document.getElementById('settings-groups');
-    groups.innerHTML = `
-      <div class="setting-group">
-        <h3>Vault</h3>
-        <div class="setting-row">
-          <span class="setting-key">Vault Path</span>
-          <span class="setting-val">${escHtml(cfg.vault_path)}</span>
-        </div>
-      </div>
-      <div class="setting-group">
-        <h3>Models</h3>
-        <div class="setting-row">
-          <span class="setting-key">OCR Model</span>
-          <span class="setting-val">${escHtml(cfg.ocr_model)}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-key">LLM Model</span>
-          <span class="setting-val">${escHtml(cfg.llm_model)}</span>
-        </div>
-      </div>
-      <div class="setting-group">
-        <h3>Categories</h3>
-        ${(cfg.categories || []).map(c => `
-          <div class="setting-row">
-            <span class="setting-key">${escHtml(c.name)}</span>
-            <span class="setting-val">${escHtml(c.slug)}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
+    groups.innerHTML =
+      '<div class="setting-group">' +
+        '<h3>Vault</h3>' +
+        '<div class="setting-row">' +
+          '<span class="setting-key">Vault Path</span>' +
+          '<span class="setting-val">' + escHtml(cfg.vault_path) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="setting-group">' +
+        '<h3>Models</h3>' +
+        '<div class="setting-row">' +
+          '<span class="setting-key">OCR Model</span>' +
+          '<span class="setting-val">' + escHtml(cfg.ocr_model) + '</span>' +
+        '</div>' +
+        '<div class="setting-row">' +
+          '<span class="setting-key">LLM Model</span>' +
+          '<span class="setting-val">' + escHtml(cfg.llm_model) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="setting-group">' +
+        '<h3>Categories</h3>' +
+        (cfg.categories || []).map(c =>
+          '<div class="setting-row">' +
+            '<span class="setting-key">' + escHtml(c.name) + '</span>' +
+            '<span class="setting-val">' + escHtml(c.slug) + '</span>' +
+          '</div>'
+        ).join('') +
+      '</div>';
   } catch(e) {
-    document.getElementById('settings-groups').innerHTML = `<p style="color:var(--red)">Error loading settings: ${e.message}</p>`;
+    document.getElementById('settings-groups').innerHTML = '<p style="color:var(--red)">Error loading settings: ' + e.message + '</p>';
   }
 }
 
+// ── Graph View ───────────────────────────────────────────────────────────────
+const graphCanvas = document.getElementById('graph-canvas');
+const graphCtx = graphCanvas.getContext('2d');
+const graphTooltip = document.getElementById('graph-tooltip');
+let graphNodes = [];
+let graphEdges = [];
+let graphScale = 1;
+let graphOffsetX = 0;
+let graphOffsetY = 0;
+let graphDragging = false;
+let graphDragNode = null;
+let graphDragStart = { x: 0, y: 0 };
+let graphPanning = false;
+let graphPanStart = { x: 0, y: 0 };
+let graphHoveredNode = null;
+let graphSimRunning = false;
+let graphSimIterations = 0;
+
+const GRAPH_TYPE_COLORS = {
+  source: '#818cf8',
+  entity: '#22c55e',
+  concept: '#a78bfa',
+  moc: '#22d3ee',
+};
+const GRAPH_TYPE_COLORS_DIM = {
+  source: 'rgba(129,140,248,0.15)',
+  entity: 'rgba(34,197,94,0.15)',
+  concept: 'rgba(167,139,250,0.15)',
+  moc: 'rgba(34,211,238,0.15)',
+};
+
+async function loadGraph() {
+  try {
+    const r = await fetch('/api/v1/graph');
+    if (!r.ok) {
+      console.warn('Graph endpoint not available');
+      return;
+    }
+    const data = await r.json();
+    initGraph(data);
+  } catch(e) {
+    console.warn('Could not load graph:', e);
+  }
+}
+
+function initGraph(data) {
+  const adj = data.graph || data;
+  const nodeMap = {};
+
+  // Build nodes from adjacency list keys
+  graphNodes = [];
+  graphEdges = [];
+
+  if (adj && typeof adj === 'object') {
+    const keys = Object.keys(adj);
+    for (const key of keys) {
+      const node = {
+        id: key,
+        label: key.split('/').pop().replace('.md', ''),
+        path: key,
+        x: Math.random() * 600 - 300,
+        y: Math.random() * 600 - 300,
+        vx: 0,
+        vy: 0,
+        type: guessType(key),
+        radius: 6,
+        fixed: false,
+      };
+      nodeMap[key] = node;
+      graphNodes.push(node);
+    }
+
+    // Build edges
+    for (const key of keys) {
+      const targets = adj[key] || [];
+      for (const target of targets) {
+        // Only add if target exists in nodeMap
+        if (nodeMap[target] || keys.includes(target)) {
+          if (!nodeMap[target]) {
+            // Add missing target node
+            const tNode = {
+              id: target,
+              label: target.split('/').pop().replace('.md', ''),
+              path: target,
+              x: Math.random() * 600 - 300,
+              y: Math.random() * 600 - 300,
+              vx: 0,
+              vy: 0,
+              type: guessType(target),
+              radius: 6,
+              fixed: false,
+            };
+            nodeMap[target] = tNode;
+            graphNodes.push(tNode);
+          }
+          graphEdges.push({ source: key, target: target });
+        }
+      }
+    }
+  }
+
+  // Scale radius by connection count
+  const connCount = {};
+  for (const e of graphEdges) {
+    connCount[e.source] = (connCount[e.source] || 0) + 1;
+    connCount[e.target] = (connCount[e.target] || 0) + 1;
+  }
+  for (const n of graphNodes) {
+    const c = connCount[n.id] || 0;
+    n.radius = Math.max(4, Math.min(14, 4 + c * 0.8));
+  }
+
+  // Reset view
+  graphScale = 1;
+  graphOffsetX = 0;
+  graphOffsetY = 0;
+  graphSimIterations = 0;
+
+  // Start simulation
+  if (!graphSimRunning) {
+    graphSimRunning = true;
+    requestAnimationFrame(graphSimLoop);
+  }
+}
+
+function guessType(path) {
+  const p = path.toLowerCase();
+  if (p.includes('/sources/') || p.includes('source')) return 'source';
+  if (p.includes('/entities/') || p.includes('entit')) return 'entity';
+  if (p.includes('/concepts/') || p.includes('concept')) return 'concept';
+  if (p.includes('/moc/') || p.includes('moc')) return 'moc';
+  return 'source';
+}
+
+function graphSimLoop() {
+  if (graphNodes.length === 0) {
+    graphSimRunning = false;
+    return;
+  }
+
+  // Run force simulation steps
+  if (graphSimIterations < 300) {
+    for (let i = 0; i < 3; i++) {
+      graphForceStep();
+    }
+    graphSimIterations++;
+  }
+
+  graphDraw();
+  graphAnimFrame = requestAnimationFrame(graphSimLoop);
+}
+
+function graphForceStep() {
+  const nodeMap = {};
+  for (const n of graphNodes) nodeMap[n.id] = n;
+
+  const repulsionStrength = 800;
+  const attractionStrength = 0.005;
+  const damping = 0.85;
+  const centerStrength = 0.01;
+
+  // Repulsion between all pairs
+  for (let i = 0; i < graphNodes.length; i++) {
+    for (let j = i + 1; j < graphNodes.length; j++) {
+      const a = graphNodes[i];
+      const b = graphNodes[j];
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) { dist = 1; dx = Math.random() - 0.5; dy = Math.random() - 0.5; }
+      const force = repulsionStrength / (dist * dist);
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      if (!a.fixed) { a.vx -= fx; a.vy -= fy; }
+      if (!b.fixed) { b.vx += fx; b.vy += fy; }
+    }
+  }
+
+  // Attraction along edges
+  for (const edge of graphEdges) {
+    const a = nodeMap[edge.source];
+    const b = nodeMap[edge.target];
+    if (!a || !b) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) continue;
+    const force = dist * attractionStrength;
+    const fx = (dx / dist) * force;
+    const fy = (dy / dist) * force;
+    if (!a.fixed) { a.vx += fx; a.vy += fy; }
+    if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
+  }
+
+  // Center gravity
+  for (const n of graphNodes) {
+    if (!n.fixed) {
+      n.vx -= n.x * centerStrength;
+      n.vy -= n.y * centerStrength;
+    }
+  }
+
+  // Apply velocity
+  for (const n of graphNodes) {
+    if (!n.fixed) {
+      n.vx *= damping;
+      n.vy *= damping;
+      n.x += n.vx;
+      n.y += n.vy;
+    }
+  }
+}
+
+function graphDraw() {
+  const container = document.getElementById('graph-container');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (w === 0 || h === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  graphCanvas.width = w * dpr;
+  graphCanvas.height = h * dpr;
+  graphCanvas.style.width = w + 'px';
+  graphCanvas.style.height = h + 'px';
+  graphCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Clear
+  graphCtx.fillStyle = '#101017';
+  graphCtx.fillRect(0, 0, w, h);
+
+  const cx = w / 2 + graphOffsetX;
+  const cy = h / 2 + graphOffsetY;
+
+  // Draw edges
+  const nodeMap = {};
+  for (const n of graphNodes) nodeMap[n.id] = n;
+
+  graphCtx.lineWidth = 0.5;
+  for (const edge of graphEdges) {
+    const a = nodeMap[edge.source];
+    const b = nodeMap[edge.target];
+    if (!a || !b) continue;
+
+    const ax = a.x * graphScale + cx;
+    const ay = a.y * graphScale + cy;
+    const bx = b.x * graphScale + cx;
+    const by = b.y * graphScale + cy;
+
+    graphCtx.beginPath();
+    graphCtx.moveTo(ax, ay);
+    graphCtx.lineTo(bx, by);
+    graphCtx.strokeStyle = 'rgba(34,34,46,0.8)';
+    graphCtx.stroke();
+  }
+
+  // Draw nodes
+  for (const n of graphNodes) {
+    const nx = n.x * graphScale + cx;
+    const ny = n.y * graphScale + cy;
+    const r = n.radius * Math.min(graphScale, 2);
+
+    // Skip if off-screen
+    if (nx < -50 || nx > w + 50 || ny < -50 || ny > h + 50) continue;
+
+    const color = GRAPH_TYPE_COLORS[n.type] || GRAPH_TYPE_COLORS.source;
+    const dimColor = GRAPH_TYPE_COLORS_DIM[n.type] || GRAPH_TYPE_COLORS_DIM.source;
+    const isHovered = graphHoveredNode === n;
+
+    // Glow for hovered node
+    if (isHovered) {
+      graphCtx.beginPath();
+      graphCtx.arc(nx, ny, r + 8, 0, Math.PI * 2);
+      graphCtx.fillStyle = dimColor;
+      graphCtx.fill();
+    }
+
+    // Node circle
+    graphCtx.beginPath();
+    graphCtx.arc(nx, ny, r, 0, Math.PI * 2);
+    graphCtx.fillStyle = isHovered ? color : dimColor;
+    graphCtx.fill();
+    graphCtx.strokeStyle = color;
+    graphCtx.lineWidth = isHovered ? 2 : 1;
+    graphCtx.stroke();
+
+    // Label for hovered node
+    if (isHovered) {
+      graphCtx.font = '600 12px "Space Grotesk", sans-serif';
+      graphCtx.fillStyle = '#ffffff';
+      graphCtx.textAlign = 'center';
+      graphCtx.fillText(n.label, nx, ny - r - 8);
+    }
+  }
+}
+
+// Graph mouse interaction
+graphCanvas.addEventListener('mousedown', e => {
+  const rect = graphCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const container = document.getElementById('graph-container');
+  const cx = container.clientWidth / 2 + graphOffsetX;
+  const cy = container.clientHeight / 2 + graphOffsetY;
+
+  // Check if clicking on a node
+  for (const n of graphNodes) {
+    const nx = n.x * graphScale + cx;
+    const ny = n.y * graphScale + cy;
+    const r = n.radius * Math.min(graphScale, 2);
+    const dist = Math.sqrt((mx - nx) ** 2 + (my - ny) ** 2);
+    if (dist <= r + 4) {
+      graphDragNode = n;
+      n.fixed = true;
+      graphDragging = true;
+      return;
+    }
+  }
+
+  // Pan
+  graphPanning = true;
+  graphPanStart = { x: e.clientX - graphOffsetX, y: e.clientY - graphOffsetY };
+});
+
+graphCanvas.addEventListener('mousemove', e => {
+  const rect = graphCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const container = document.getElementById('graph-container');
+  const cx = container.clientWidth / 2 + graphOffsetX;
+  const cy = container.clientHeight / 2 + graphOffsetY;
+
+  if (graphDragging && graphDragNode) {
+    graphDragNode.x = (mx - cx) / graphScale;
+    graphDragNode.y = (my - cy) / graphScale;
+    graphSimIterations = 0; // re-activate simulation
+    return;
+  }
+
+  if (graphPanning) {
+    graphOffsetX = e.clientX - graphPanStart.x;
+    graphOffsetY = e.clientY - graphPanStart.y;
+    return;
+  }
+
+  // Hover detection
+  let found = null;
+  for (const n of graphNodes) {
+    const nx = n.x * graphScale + cx;
+    const ny = n.y * graphScale + cy;
+    const r = n.radius * Math.min(graphScale, 2);
+    const dist = Math.sqrt((mx - nx) ** 2 + (my - ny) ** 2);
+    if (dist <= r + 4) {
+      found = n;
+      break;
+    }
+  }
+
+  graphHoveredNode = found;
+
+  if (found) {
+    graphCanvas.style.cursor = 'pointer';
+    graphTooltip.textContent = found.label;
+    graphTooltip.style.left = (mx + 12) + 'px';
+    graphTooltip.style.top = (my - 8) + 'px';
+    graphTooltip.classList.add('visible');
+  } else {
+    graphCanvas.style.cursor = 'grab';
+    graphTooltip.classList.remove('visible');
+  }
+});
+
+graphCanvas.addEventListener('mouseup', e => {
+  if (graphDragging && graphDragNode) {
+    // If barely moved, treat as click
+    graphDragNode.fixed = false;
+    graphDragging = false;
+    graphDragNode = null;
+  }
+  if (graphPanning) {
+    graphPanning = false;
+  }
+});
+
+graphCanvas.addEventListener('mouseleave', () => {
+  if (graphDragging && graphDragNode) {
+    graphDragNode.fixed = false;
+  }
+  graphDragging = false;
+  graphDragNode = null;
+  graphPanning = false;
+  graphHoveredNode = null;
+  graphTooltip.classList.remove('visible');
+});
+
+graphCanvas.addEventListener('click', e => {
+  if (graphHoveredNode) {
+    // Navigate to wiki page
+    const path = graphHoveredNode.path;
+    // Switch to wiki panel
+    document.querySelector('[data-panel="wiki"]').click();
+    // Load the page
+    setTimeout(() => {
+      navigateToWikiPage(graphHoveredNode.label);
+    }, 100);
+  }
+});
+
+graphCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  graphScale *= delta;
+  graphScale = Math.max(0.1, Math.min(5, graphScale));
+}, { passive: false });
+
+function graphZoom(factor) {
+  graphScale *= factor;
+  graphScale = Math.max(0.1, Math.min(5, graphScale));
+}
+
+function graphReset() {
+  graphScale = 1;
+  graphOffsetX = 0;
+  graphOffsetY = 0;
+  graphSimIterations = 0; // re-run simulation
+  for (const n of graphNodes) {
+    n.x = Math.random() * 600 - 300;
+    n.y = Math.random() * 600 - 300;
+    n.vx = 0;
+    n.vy = 0;
+    n.fixed = false;
+  }
+}
+
+// Resize observer for graph canvas
+const graphResizeObserver = new ResizeObserver(() => {
+  if (graphNodes.length > 0) graphDraw();
+});
+graphResizeObserver.observe(document.getElementById('graph-container'));
+
 // ── Utils ────────────────────────────────────────────────────────────────────
-function toast(msg, color='') {
+function toast(msg, color) {
+  color = color || '';
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.style.color = color === 'red' ? 'var(--red)' : color === 'amber' ? 'var(--amber)' : 'var(--text)';
   el.style.borderColor = color === 'red' ? 'rgba(239,68,68,0.3)' : color === 'amber' ? 'rgba(245,158,11,0.3)' : 'var(--border2)';
   el.classList.add('show');
   clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove('show'), 2800);
+  el._t = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function debounce(fn, delay) {
-  let timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
-}
-document.addEventListener('DOMContentLoaded', () => {
-  const observerOptions = { 
-    root: null, 
-    rootMargin: '0px', 
-    threshold: 0.1 
-  };
-  
-  const staggerObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry, index) => {
-      if (entry.isIntersecting) {
-        // Apply staggered delay based on index
-        entry.target.style.animationDelay = `${index * 0.05}s`;
-        staggerObserver.unobserve(entry.target);
-      }
-    });
-  }, observerOptions);
-
-  // Call this function globally whenever new items are appended to the DOM
-  window.applyStaggerEffect = () => {
-    const unobservedItems = document.querySelectorAll(
-      '.job-card:not([style*="animation-delay"]), .msg:not([style*="animation-delay"])'
-    );
-    unobservedItems.forEach(el => staggerObserver.observe(el));
-  };
-
-  // Initial execution
-  window.applyStaggerEffect();
-});
-// Initial load
+// ── Initial load ─────────────────────────────────────────────────────────────
 loadJobs();
 </script>
 </body>

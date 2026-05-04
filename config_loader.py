@@ -29,6 +29,10 @@ _DEFAULTS = {
     "ollama_url":   "http://localhost:11434",
     "ocr_model":    "glm-ocr:latest",
     "llm_model":    "qwen2.5:7b-instruct",
+    "watch_enabled": False,
+    "watch_folder": r"D:\obsidian\LLM_Wiki_inbox",
+    "watch_debounce_sec": 2.0,
+    "watch_poll_sec": 1.0,
     "ocr": {
         "max_concurrency":     2,
         "dpi":                 200,
@@ -43,6 +47,7 @@ _DEFAULTS = {
         "max_entity_pages":     3,
         "max_concept_pages":    3,
         "chunk_size":           14000,
+        "chunk_overlap":        200,
         "keep_alive":           300,
     },
     "categories": [
@@ -67,6 +72,10 @@ _DEFAULTS = {
         "k1": 1.5,
         "b": 0.75,
     },
+    "watch_enabled": False,
+    "watch_folder": r"D:\obsidian\LLM_Wiki_inbox",
+    "watch_debounce_sec": 2.0,
+    "watch_poll_sec": 1.0,
     "server": {
         "host": "0.0.0.0",
         "port": 7337,

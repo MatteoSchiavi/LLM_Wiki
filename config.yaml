@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║     SECONDO CERVELLO  v3  —  The Ultimate Knowledge Base    ║
+# ║     SECONDO CERVELLO  v4  —  The Ultimate Knowledge Base    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 # ── Vault ────────────────────────────────────────────────────────────────────
@@ -39,6 +39,8 @@ wiki:
   max_concept_pages: 3
   # Chunk size for hierarchical token management (chars per chunk)
   chunk_size: 14000
+  # Overlap between chunks (chars) for boundary context
+  chunk_overlap: 200
   # Seconds to keep LLM model loaded after use
   keep_alive: 300
 
@@ -88,6 +90,21 @@ categories:
     slug: "personal"
     keywords: ["personal", "journal", "diary", "notes", "reflection",
                "goals", "habits", "learning"]
+
+# ── Folder Watcher ────────────────────────────────────────────────────────────
+# When enabled, any file dropped into the watch_folder is automatically
+# processed through the pipeline.
+#
+# SMART ROUTING:
+#   PDFs/Images  -> OCR (glm-ocr) then Qwen
+#   Audio        -> Whisper transcription then Qwen
+#   Text/Code    -> Skip OCR entirely, go directly to Qwen
+#   (.txt, .md, .csv, .json, .html, .py, .js, .yaml, etc.)
+
+watch_enabled: true
+watch_folder: "D:\\obsidian\\LLM_Wiki_inbox"
+watch_debounce_sec: 2.0    # seconds to wait for file to stabilize after write
+watch_poll_sec: 1.0        # how often to check if file is still being written
 
 # ── Search ───────────────────────────────────────────────────────────────────
 search:

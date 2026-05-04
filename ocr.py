@@ -8,6 +8,11 @@ VRAM management:
     ollama /api/generate with {"model": OCR_MODEL, "keep_alive": 0}
   - This ensures the OCR model is fully evicted from VRAM before Qwen loads
 
+Smart routing (handled in main.py):
+  - PDFs/Images  → this OCR module → raw .md
+  - Audio        → this transcription module → raw .md
+  - Text/Code    → SKIP this module entirely, go directly to Qwen
+
 Supports:
   PDF:  .pdf
   Images: .png, .jpg, .jpeg, .gif, .bmp, .tiff, .webp
@@ -54,6 +59,7 @@ CRITICAL RULES:
 1. Transcribe EVERY piece of text on this page — do not skip, summarize, or paraphrase anything
 2. Maintain the original reading order (top-to-bottom, left-to-right)
 3. Output ONLY the Markdown transcription — no preamble, no commentary, no explanations
+4. If the page is blank or contains no readable content, output: `(blank page)`
 
 TEXT HANDLING:
 - Use headings (# ## ### ####) to match the document's visual hierarchy
@@ -62,6 +68,8 @@ TEXT HANDLING:
 - Transcribe equations using LaTeX notation: inline $equation$ or block $$equation$$
 - Preserve list formatting (ordered and unordered)
 - Keep paragraph breaks where they appear in the original
+- For columns: read top-to-bottom within each column, then left-to-right across columns
+- For headers/footers: include them once at the top/bottom if they contain useful info
 
 TABLE HANDLING:
 - Convert ALL tables to Markdown table format with | separators and alignment
@@ -73,6 +81,9 @@ TABLE HANDLING:
   > |---------|---------|---------|
   > | data    | data    | data    |
 - Preserve all numerical data exactly — never approximate or round
+- Include table captions or titles if present
+- For multi-page tables that continue from a previous page, add:
+  > **Table continued from previous page**
 
 GRAPH AND CHART HANDLING:
 - For each graph or chart, provide a structured description:
@@ -84,6 +95,7 @@ GRAPH AND CHART HANDLING:
   > - Trend/Observation: [what the data visually shows]
 - Extract any visible numerical values from the axes, bars, or data points
 - If a trend line or pattern is visible, describe it
+- For pie charts: list each slice with its label and percentage
 
 INFOGRAPHIC HANDLING:
 - For infographics, create a structured description preserving all information:
@@ -93,16 +105,19 @@ INFOGRAPHIC HANDLING:
   > - Key statistics: [list all numbers and percentages]
   > - Visual elements: [describe icons, illustrations, color coding]
 - Every number, percentage, and statistic must be transcribed exactly
+- Include any timeline or process flow information
 
 DIAGRAM AND FLOWCHART HANDLING:
 - Describe the structure, nodes, and connections:
-  > **Diagram: [Type — e.g., Flowchart / Architecture / Circuit]: [Title]**
+  > **Diagram: [Type — e.g., Flowchart / Architecture / Circuit / UML]: [Title]**
   > - Components: [list all nodes/blocks with labels]
   > - Connections: [A] → [B] → [C]
   > - Decision points: [describe any branching logic]
   > - Labels/annotations: [describe any text on arrows or connections]
 - If the diagram has a clear flow, represent it with arrow notation
 - Preserve all labels, even small ones
+- For circuit diagrams: list components and their connections
+- For UML diagrams: describe classes, methods, and relationships
 
 IMAGE AND ILLUSTRATION HANDLING:
 - For informative images (photos, screenshots, illustrations with content):
@@ -112,6 +127,7 @@ IMAGE AND ILLUSTRATION HANDLING:
   > - Text in image: [any readable text within the image]
   > - Context: [how it relates to the surrounding content if apparent]
 - For purely decorative images, omit them
+- For maps: describe key locations, boundaries, and labels
 
 FORMULA AND EQUATION HANDLING:
 - Inline equations: $E = mc^2$
@@ -120,11 +136,29 @@ FORMULA AND EQUATION HANDLING:
   \\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}
   $$
 - Preserve all subscripts, superscripts, Greek letters, and special symbols
+- For chemical formulas: H₂SO₄, NaCl
+- For multi-line equations, use aligned blocks
+
+CODE AND MONOSPACED TEXT:
+- Wrap code in backticks: `variable_name`
+- For code blocks:
+  ```python
+  def example():
+      return 42
+  ```
+- Preserve indentation exactly
 
 UNCLEAR SECTIONS:
 - Mark truly illegible text with [?]
 - Mark uncertain readings with [?!] followed by your best guess: [?!probably this word]
 - Mark partially visible text with [...?] for missing portions
+- If an entire section is unreadable: [illegible section — approx. N lines]
+
+PAGE LAYOUT:
+- If the page has multiple columns, transcribe each column fully before moving to the next
+- For sidebars/callout boxes: transcribe with > blockquote formatting
+- For page numbers: ignore them (they are not content)
+- For watermarks: note them as [watermark: text] only if they obscure content
 
 REMEMBER: Your goal is to create a Markdown document that preserves ALL information from the original page. A reader should be able to understand the complete content without ever seeing the original document.
 """
@@ -134,15 +168,25 @@ REMEMBER: Your goal is to create a Markdown document that preserves ALL informat
 IMAGE_OCR_PROMPT = """\
 You are a precise image transcription engine. Extract ALL content from this image into clean Markdown.
 
-Follow the same rules as the main OCR prompt:
-- Transcribe every piece of text
-- Convert tables to Markdown tables
-- Describe graphs, charts, and infographics in structured format
-- Describe diagrams and flowcharts with connections
-- Describe informative images with details
-- Use LaTeX for equations
-- Mark unclear text with [?]
+Follow the same comprehensive rules as the main OCR prompt:
+- Transcribe every piece of text, no matter how small
+- Convert tables to Markdown tables with all numerical data preserved exactly
+- Describe graphs, charts, and infographics in structured format (axes, data points, trends)
+- Describe diagrams and flowcharts with connections and arrow notation
+- Describe informative images with details, text overlays, and context
+- Use LaTeX for equations and formulas
+- Handle code blocks with proper language tags
+- Mark unclear text with [?], uncertain readings with [?!guess], missing portions with [...?]
+- For blank images or images with no content, output: `(blank image)`
 - Output ONLY Markdown — no preamble or commentary
+
+EXTRA IMAGE-SPECIFIC RULES:
+- If this is a screenshot: preserve all visible UI text, buttons, menus, and content
+- If this is a photo of a document: treat it like a document page
+- If this is a diagram: describe all nodes, connections, labels, and arrows
+- If this is a chart/graph: extract all visible data points and values
+- If text is at an angle or rotated: transcribe it as normal horizontal text
+- If there are watermarks: note them but don't let them obscure the main content
 
 Be thorough. Every detail matters.
 """

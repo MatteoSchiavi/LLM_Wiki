@@ -2,6 +2,9 @@
 BM25 search over Obsidian vault markdown files.
 Pure Python, zero external dependencies, English-only.
 
+v4: No changes needed — add_document() already existed (Fix #3 was
+already implemented in v3), CJK support already removed.
+
 Features:
 - Title-boosted scoring (2x weight for title matches)
 - Context-aware snippet generation around matching terms
@@ -9,6 +12,7 @@ Features:
 - Incremental add/remove without full rebuild
 - Wikilink adjacency list for neighbor-expanded search
 - Async rebuild via asyncio.to_thread()
+- Search term highlighting in snippets
 """
 
 import asyncio
@@ -159,7 +163,6 @@ def _generate_snippet(text: str, query_terms: list[str], max_len: int = 200) -> 
         return snippet + ("\u2026" if len(text) > max_len else "")
 
     # Find the best window — the region with the densest cluster of matches
-    # Score each possible window start by counting matches that fall within it
     best_start = 0
     best_count = 0
     window_size = max_len
@@ -183,20 +186,29 @@ def _generate_snippet(text: str, query_terms: list[str], max_len: int = 200) -> 
 
     # Clean cut at word boundaries
     if best_start > 0:
-        # Don't cut mid-word at the start
         space_pos = snippet.find(" ")
         if space_pos > 0 and space_pos < 30:
             snippet = snippet[space_pos + 1:]
         snippet = "\u2026" + snippet
 
     if best_start + window_size < len(text):
-        # Don't cut mid-word at the end
         last_space = snippet.rfind(" ")
         if last_space > window_size // 2:
             snippet = snippet[:last_space]
         snippet = snippet + "\u2026"
 
     return snippet
+
+
+def _highlight_snippet(text: str, query_terms: list[str]) -> str:
+    """Return snippet with search terms wrapped in <mark> tags for highlighting."""
+    if not query_terms:
+        return text
+    result = text
+    for term in sorted(query_terms, key=len, reverse=True):  # longest first
+        pattern = re.compile(re.escape(term), re.IGNORECASE)
+        result = pattern.sub(f'<mark>{term}</mark>', result)
+    return result
 
 
 # ── BM25 Search ───────────────────────────────────────────────────────────────
@@ -206,23 +218,14 @@ class BM25Search:
 
     def __init__(self, vault_dir: Path):
         self.vault_dir = vault_dir
-        # doc_id (int) → document record
         self._docs: dict[int, dict] = {}
-        # path (str) → doc_id — for quick lookup by path
         self._path_to_id: dict[str, int] = {}
-        # Next available doc id
         self._next_id: int = 0
-        # Inverted index: term → {doc_id: tf}
         self._index: dict[str, dict[int, int]] = {}
-        # Title inverted index: term → {doc_id: tf}
         self._title_index: dict[str, dict[int, int]] = {}
-        # Average document length (body tokens)
         self._avgdl: float = 0.0
-        # Total body token count across all docs
         self._total_dl: int = 0
-        # IDF cache: term → idf value
         self._idf: dict[str, float] = {}
-        # Adjacency list: page_slug → [linked_slug, ...]
         self._adjacency: dict[str, list[str]] = {}
 
     # ── Rebuild ────────────────────────────────────────────────────────────
@@ -233,7 +236,6 @@ class BM25Search:
             log.warning("Vault directory does not exist: %s", self.vault_dir)
             return
 
-        # Reset all state
         self._docs.clear()
         self._path_to_id.clear()
         self._next_id = 0
@@ -244,7 +246,6 @@ class BM25Search:
         self._idf.clear()
 
         for p in sorted(self.vault_dir.rglob("*.md")):
-            # Skip hidden files and .obsidian directory
             if p.name.startswith(".") or ".obsidian" in p.parts:
                 continue
             try:
@@ -284,12 +285,11 @@ class BM25Search:
         tokens = _tokenize(body_text)
         title_tokens = _tokenize(title)
 
-        # Store the document record
         self._docs[doc_id] = {
             "path":         path,
             "tokens":       tokens,
             "title_tokens": title_tokens,
-            "text":         body_text[:2000],  # keep more text for snippets
+            "text":         body_text[:2000],
             "title":        title or Path(path).stem.replace("-", " ").replace("_", " "),
         }
 
@@ -297,21 +297,18 @@ class BM25Search:
         self._total_dl += dl
         self._avgdl = self._total_dl / len(self._docs) if self._docs else 0.0
 
-        # Update body inverted index
         freq: dict[str, int] = {}
         for t in tokens:
             freq[t] = freq.get(t, 0) + 1
         for t, f in freq.items():
             self._index.setdefault(t, {})[doc_id] = f
 
-        # Update title inverted index
         title_freq: dict[str, int] = {}
         for t in title_tokens:
             title_freq[t] = title_freq.get(t, 0) + 1
         for t, f in title_freq.items():
             self._title_index.setdefault(t, {})[doc_id] = f
 
-        # Recompute IDF for affected terms
         self._recompute_idf(set(freq.keys()) | set(title_freq.keys()))
 
     # ── Incremental remove ────────────────────────────────────────────────
@@ -330,10 +327,8 @@ class BM25Search:
         self._total_dl -= dl
         self._avgdl = self._total_dl / len(self._docs) if self._docs else 0.0
 
-        # Collect terms that need IDF recomputation
         affected_terms: set[str] = set()
 
-        # Remove from body inverted index
         for t in doc["tokens"]:
             postings = self._index.get(t)
             if postings is not None:
@@ -342,7 +337,6 @@ class BM25Search:
                 if not postings:
                     del self._index[t]
 
-        # Remove from title inverted index
         for t in doc["title_tokens"]:
             postings = self._title_index.get(t)
             if postings is not None:
@@ -351,13 +345,11 @@ class BM25Search:
                 if not postings:
                     del self._title_index[t]
 
-        # Recompute IDF for affected terms
         self._recompute_idf(affected_terms)
 
     # ── IDF computation ───────────────────────────────────────────────────
 
     def _recompute_idf(self, terms: set[str]):
-        """Recompute IDF values for a set of terms."""
         N = len(self._docs)
         if N == 0:
             for t in terms:
@@ -369,17 +361,6 @@ class BM25Search:
                 self._idf.pop(t, None)
             else:
                 self._idf[t] = math.log((N - df + 0.5) / (df + 0.5) + 1.0)
-
-    def _ensure_idf(self):
-        """Ensure IDF is computed for all terms (called after bulk rebuild)."""
-        N = len(self._docs)
-        if N == 0:
-            self._idf.clear()
-            return
-        self._idf = {
-            t: math.log((N - len(postings) + 0.5) / (len(postings) + 0.5) + 1.0)
-            for t, postings in self._index.items()
-        }
 
     # ── Search ────────────────────────────────────────────────────────────
 
@@ -394,7 +375,6 @@ class BM25Search:
 
         scores: dict[int, float] = {}
         avgdl = self._avgdl or 1.0
-        N = len(self._docs)
 
         # Body scoring — standard BM25
         for term in q_terms:
@@ -426,32 +406,29 @@ class BM25Search:
         for doc_id, score in ranked[:k]:
             d = self._docs[doc_id]
             snippet = _generate_snippet(d["text"], q_terms)
+            highlighted = _highlight_snippet(snippet, q_terms)
             results.append({
-                "path":    d["path"],
-                "title":   d["title"],
-                "score":   round(score, 4),
-                "snippet": snippet,
+                "path":       d["path"],
+                "title":      d["title"],
+                "score":      round(score, 4),
+                "snippet":    snippet,
+                "highlighted": highlighted,
             })
         return results
 
     # ── Adjacency list (wikilink graph) ───────────────────────────────────
 
     def build_adjacency_list(self) -> dict[str, list[str]]:
-        """
-        Parse all .md files for [[wikilinks]] and return
-        {page_slug: [linked_slug1, linked_slug2, ...]}.
-        """
+        """Parse all .md files for [[wikilinks]] and return adjacency list."""
         adjacency: dict[str, list[str]] = {}
 
         if not self.vault_dir.exists():
             return adjacency
 
-        # Build a map from slug → normalized slug for resolution
         slug_set: set[str] = set()
         for doc_id, doc in self._docs.items():
             slug = _slug_from_path(doc["path"])
             slug_set.add(slug)
-            # Also index by title slug
             title_slug = doc["title"].lower().strip()
             if title_slug:
                 slug_set.add(title_slug)
@@ -460,7 +437,6 @@ class BM25Search:
             source_slug = _slug_from_path(doc["path"])
             links: list[str] = []
 
-            # Extract wikilinks from the raw text (not the stored snippet)
             p = self.vault_dir / doc["path"]
             if not p.exists():
                 continue
@@ -472,16 +448,13 @@ class BM25Search:
             for m in _RE_WIKILINK_PARSE.finditer(raw):
                 target = m.group(1).strip()
                 target_slug = target.lower()
-                # Normalize: try to match against known slugs
                 if target_slug in slug_set:
                     links.append(target_slug)
                 else:
-                    # Also try the path-style slug
                     alt_slug = target.lower().replace("-", " ").replace("_", " ")
                     if alt_slug in slug_set:
                         links.append(alt_slug)
                     else:
-                        # Keep the link even if target doesn't exist (orphan link)
                         links.append(target_slug)
 
             adjacency[source_slug] = links
@@ -491,14 +464,12 @@ class BM25Search:
         return adjacency
 
     def save_adjacency_list(self, path: Path):
-        """Save adjacency list to a JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self._adjacency, f, indent=2, ensure_ascii=False)
         log.info("Adjacency list saved to %s", path)
 
     def load_adjacency_list(self, path: Path):
-        """Load adjacency list from a JSON file."""
         if not path.exists():
             log.warning("Adjacency file not found: %s", path)
             return
@@ -509,33 +480,25 @@ class BM25Search:
     # ── Neighbor-expanded search ──────────────────────────────────────────
 
     def search_with_neighbors(self, query: str, k: int = 6) -> list[dict]:
-        """
-        BM25 search + 1-degree neighbor expansion from adjacency list.
-        Returns the top-k BM25 results plus any direct neighbors of those
-        results, with neighbors getting a discounted score.
-        """
+        """BM25 search + 1-degree neighbor expansion from adjacency list."""
         base_results = self.search(query, k)
         if not base_results or not self._adjacency:
             return base_results
 
-        # Map from slug → doc for quick neighbor lookup
         slug_to_doc: dict[str, dict] = {}
         for doc_id, doc in self._docs.items():
             slug_to_doc[_slug_from_path(doc["path"])] = doc
 
-        # Collect already-included paths
         seen_paths: set[str] = {r["path"] for r in base_results}
 
-        # Expand with 1-degree neighbors
         neighbor_results: list[dict] = []
+        q_terms = _tokenize(query)
         for result in base_results:
             slug = _slug_from_path(result["path"])
             neighbors = self._adjacency.get(slug, [])
             for neighbor_slug in neighbors:
-                # Find the neighbor document
                 neighbor_doc = slug_to_doc.get(neighbor_slug)
                 if neighbor_doc is None:
-                    # Try matching by iterating (slower fallback)
                     for doc_id, doc in self._docs.items():
                         if _slug_from_path(doc["path"]) == neighbor_slug:
                             neighbor_doc = doc
@@ -543,32 +506,29 @@ class BM25Search:
                 if neighbor_doc is None or neighbor_doc["path"] in seen_paths:
                     continue
                 seen_paths.add(neighbor_doc["path"])
-                # Neighbor gets a discounted score (half of the source result)
-                q_terms = _tokenize(query)
                 snippet = _generate_snippet(neighbor_doc["text"], q_terms)
+                highlighted = _highlight_snippet(snippet, q_terms)
                 neighbor_results.append({
-                    "path":    neighbor_doc["path"],
-                    "title":   neighbor_doc["title"],
-                    "score":   round(result["score"] * 0.5, 4),
-                    "snippet": snippet,
+                    "path":        neighbor_doc["path"],
+                    "title":       neighbor_doc["title"],
+                    "score":       round(result["score"] * 0.5, 4),
+                    "snippet":     snippet,
+                    "highlighted": highlighted,
                 })
 
-        # Merge and sort: base results first, then neighbors interleaved by score
         all_results = base_results + neighbor_results
         all_results.sort(key=lambda r: r["score"], reverse=True)
-        return all_results[:k * 2]  # return up to 2k to include neighbors
+        return all_results[:k * 2]
 
     # ── Page snippet ──────────────────────────────────────────────────────
 
     def get_page_snippet(self, path: str, max_len: int = 200) -> str:
-        """Get a short text snippet for a page by its vault-relative path."""
         doc_id = self._path_to_id.get(path)
         if doc_id is not None:
             doc = self._docs[doc_id]
             text = doc["text"]
             if len(text) <= max_len:
                 return text
-            # Try to cut at a sentence or word boundary
             snippet = text[:max_len]
             last_period = snippet.rfind(".")
             last_space = snippet.rfind(" ")
@@ -578,7 +538,6 @@ class BM25Search:
                 snippet = snippet[:last_space]
             return snippet + ("\u2026" if len(text) > len(snippet) else "")
 
-        # Fallback: read from disk
         p = self.vault_dir / path
         if not p.exists():
             return ""

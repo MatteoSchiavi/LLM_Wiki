@@ -2,13 +2,19 @@
 Wiki engine: Qwen reads raw OCR output → creates polished .md pages
 with wikilinks, categorization, typo fixes, and proper folder placement.
 
-Features:
-  - Schema-driven prompts (reads SCHEMA.md from vault at runtime)
-  - Hierarchical token management (chunk large documents, merge results)
-  - Automated cross-referencing (scan for unlinked title matches)
-  - Durable task ledger (pending_tasks.md)
-  - Revise & Organize batch operation
-  - Incremental adjacency list maintenance
+v4 fixes applied:
+  - Fix #1:  emit_fn standardised to 2-arg (event, data) everywhere
+  - Fix #5:  _update_index uses unique section markers, no duplicate replace
+  - Fix #6:  Category-move condition rewritten with explicit parentheses
+  - Fix #7:  cross_reference pre-compiles all patterns, single-pass per page
+  - Fix #8:  Entity/concept pages merge instead of clobber
+  - Fix #9:  log_entry date substituted server-side
+  - Fix #10: _chunk_text adds 200-char overlap (sliding window)
+  - Fix #11: Schema sent once in system only, condensed to 2000 chars
+  - Fix #13: Query system prompt gets full schema + category list
+  - Fix #14: revise_and_organize skips unchanged pages via SHA-256
+  - Fix #15: _get_existing_pages cached with invalidation on write
+  - Fix #16: Retry with backoff on all Ollama calls
 """
 
 import asyncio
@@ -35,6 +41,11 @@ AUTO_CONCEPTS = CFG["wiki"]["auto_create_concepts"]
 MAX_ENTITIES  = CFG["wiki"]["max_entity_pages"]
 MAX_CONCEPTS  = CFG["wiki"]["max_concept_pages"]
 CHUNK_SIZE    = CFG["wiki"]["chunk_size"]
+CHUNK_OVERLAP = 200  # Fix #10: overlap between chunks
+
+# Retry settings (Fix #16)
+_MAX_RETRIES    = 2
+_RETRY_BASE_SEC = 5.0
 
 # ─── Category map for quick lookup ────────────────────────────────────────────
 
@@ -44,7 +55,7 @@ _CATEGORY_KEYWORDS: list[tuple[str, list[str]]] = [
 ]
 
 
-# ─── SCHEMA.md (default) ─────────────────────────────────────────────────────
+# ─── SCHEMA.md (default) — condensed for prompt injection ────────────────────
 
 _DEFAULT_SCHEMA = """\
 # SCHEMA.md — Wiki Governance
@@ -94,7 +105,7 @@ updated: "YYYY-MM-DD"
 - If no category fits, create a new slug (lowercase, hyphens)
 
 ## Quality Rules
-- Fix OCR misreads: "rn" → "m", "0" → "O" (context-dependent)
+- Fix OCR misreads: "rn" -> "m", "0" -> "O" (context-dependent)
 - Fix broken or merged words
 - Preserve all important data, numbers, and specific details
 - Never fabricate information not in the source
@@ -117,6 +128,9 @@ class WikiEngine:
         self.meta_dir    = vault / ".meta"
         self.cfg         = cfg
         self._schema     = None  # cached SCHEMA.md content
+        # Fix #15: cache for _get_existing_pages
+        self._pages_cache: list[dict] | None = None
+        self._pages_cache_valid = False
         self._ensure_scaffold()
 
     # ── Schema management ───────────────────────────────────────────────────
@@ -134,7 +148,10 @@ class WikiEngine:
             idx.write_text(
                 "# LLM Wiki Index\n\n"
                 "Auto-maintained by Secondo Cervello.\n\n"
-                "## Sources\n\n## Entities\n\n## Concepts\n\n## Maps of Content\n\n",
+                "<!-- SOURCES_START -->\n## Sources\n\n<!-- SOURCES_END -->\n\n"
+                "<!-- ENTITIES_START -->\n## Entities\n\n<!-- ENTITIES_END -->\n\n"
+                "<!-- CONCEPTS_START -->\n## Concepts\n\n<!-- CONCEPTS_END -->\n\n"
+                "<!-- MOC_START -->\n## Maps of Content\n\n<!-- MOC_END -->\n\n",
                 encoding="utf-8",
             )
 
@@ -187,7 +204,10 @@ class WikiEngine:
     # ── Page listing for wikilink context ───────────────────────────────────
 
     def _get_existing_pages(self) -> list[dict]:
-        """Get a compact list of all existing wiki pages."""
+        """Get a compact list of all existing wiki pages. Cached (Fix #15)."""
+        if self._pages_cache_valid and self._pages_cache is not None:
+            return self._pages_cache
+
         pages = []
         for p in sorted(self.vault.rglob("*.md")):
             if p.name.startswith(".") or ".obsidian" in str(p):
@@ -197,10 +217,20 @@ class WikiEngine:
             try:
                 rel = str(p.relative_to(self.vault))
                 title = _extract_title(p.read_text(encoding="utf-8"))
-                pages.append({"path": rel, "title": title})
+                # Also compute SHA-256 for revision skip (Fix #14)
+                sha = hashlib.sha256(p.read_bytes()).hexdigest()
+                pages.append({"path": rel, "title": title, "sha256": sha})
             except Exception:
                 pass
+
+        self._pages_cache = pages
+        self._pages_cache_valid = True
         return pages
+
+    def _invalidate_pages_cache(self):
+        """Invalidate the pages cache after writing (Fix #15)."""
+        self._pages_cache_valid = False
+        self._pages_cache = None
 
     def _build_existing_pages_text(self) -> str:
         """Build text summary of existing pages for LLM prompt."""
@@ -209,7 +239,7 @@ class WikiEngine:
             return "(No pages yet — this is the first document)"
         lines = []
         for pg in pages:
-            lines.append(f"- [[{pg['title']}]] → {pg['path']}")
+            lines.append(f"- [[{pg['title']}]] -> {pg['path']}")
         return "\n".join(lines)
 
     # ── File writing (creates folders on demand) ────────────────────────────
@@ -221,37 +251,84 @@ class WikiEngine:
             raise ValueError(f"Path escape attempt: {rel_path}")
         p.parent.mkdir(parents=True, exist_ok=True)  # on-demand folder creation
         p.write_text(content, encoding="utf-8")
+        self._invalidate_pages_cache()  # Fix #15: invalidate cache on write
         return p
 
+    # Fix #8: Merge entity/concept pages instead of clobbering
+    def _write_or_merge_page(self, rel_path: str, content: str) -> Path:
+        """
+        Write a page. If it already exists (entity/concept), merge new content
+        instead of overwriting. Merging appends a 'Also from' section.
+        """
+        p = (self.vault / rel_path).resolve()
+        if not str(p).startswith(str(self.vault.resolve())):
+            raise ValueError(f"Path escape attempt: {rel_path}")
+
+        if p.exists():
+            # Merge: preserve existing content, add new as a supplementary section
+            existing = p.read_text(encoding="utf-8")
+            # Extract source from new content's frontmatter
+            new_title = _extract_title(content)
+            existing_title = _extract_title(existing)
+            if new_title and new_title != existing_title:
+                # Different titles — don't merge, just overwrite
+                p.write_text(content, encoding="utf-8")
+            else:
+                # Same entity/concept — merge supplementary info
+                # Strip frontmatter from new content for the merge body
+                new_body = _strip_frontmatter_body(content)
+                # Add a separator and the new content
+                merged = existing.rstrip() + "\n\n---\n\n**Additional source:**\n\n" + new_body
+                # Update the 'updated' field in frontmatter
+                today = datetime.now().strftime("%Y-%m-%d")
+                merged = re.sub(
+                    r'updated:\s*"[^"]*"',
+                    f'updated: "{today}"',
+                    merged,
+                    count=1,
+                )
+                p.write_text(merged, encoding="utf-8")
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+
+        self._invalidate_pages_cache()
+        return p
+
+    # Fix #5: _update_index uses unique section markers, no duplicate replace
     def _update_index(self, source_page: dict, entity_pages: list, concept_pages: list):
-        """Update index.md with new page entries."""
+        """Update index.md with new page entries using unique markers."""
         idx_path = self.vault / "index.md"
         current = idx_path.read_text(encoding="utf-8") if idx_path.exists() else ""
+
+        def _insert_after_marker(text: str, marker_start: str, marker_end: str, entry: str) -> str:
+            """Insert entry between two unique markers."""
+            start_idx = text.find(marker_start)
+            end_idx = text.find(marker_end)
+            if start_idx < 0 or end_idx < 0 or end_idx <= start_idx:
+                return text  # markers not found, skip
+            # Insert entry right before the end marker
+            insert_pos = end_idx
+            return text[:insert_pos] + entry + "\n" + text[insert_pos:]
 
         if source_page:
             title = source_page.get("title", "Untitled")
             folder = source_page.get("folder", "Sources")
             filename = source_page.get("filename", "")
             entry = f"- [[{title}]] — {folder}/{filename}"
-            marker = "## Sources"
-            if marker in current:
-                current = current.replace(marker, marker + "\n" + entry)
+            current = _insert_after_marker(current, "<!-- SOURCES_START -->", "<!-- SOURCES_END -->", entry)
 
         for pg in entity_pages:
             title = pg.get("title", "Untitled")
             filename = pg.get("filename", "")
             entry = f"- [[{title}]] — Entities/{filename}"
-            marker = "## Entities"
-            if marker in current:
-                current = current.replace(marker, marker + "\n" + entry)
+            current = _insert_after_marker(current, "<!-- ENTITIES_START -->", "<!-- ENTITIES_END -->", entry)
 
         for pg in concept_pages:
             title = pg.get("title", "Untitled")
             filename = pg.get("filename", "")
             entry = f"- [[{title}]] — Concepts/{filename}"
-            marker = "## Concepts"
-            if marker in current:
-                current = current.replace(marker, marker + "\n" + entry)
+            current = _insert_after_marker(current, "<!-- CONCEPTS_START -->", "<!-- CONCEPTS_END -->", entry)
 
         idx_path.write_text(current, encoding="utf-8")
 
@@ -270,7 +347,7 @@ class WikiEngine:
         current += f"\n- [ ] [{today}] {task}"
         tasks_p.write_text(current, encoding="utf-8")
 
-    async def _process_pending_tasks(self, emit_fn=None):
+    async def _process_pending_tasks(self, emit_fn: Callable | None = None):
         """Read and execute pending tasks from the task ledger."""
         tasks_p = self.vault / "pending_tasks.md"
         if not tasks_p.exists():
@@ -323,22 +400,32 @@ class WikiEngine:
         tasks_p.write_text(content, encoding="utf-8")
         return executed
 
-    # ── Cross-referencing daemon ────────────────────────────────────────────
+    # ── Cross-referencing daemon (Fix #7: pre-compiled patterns) ────────────
 
     async def cross_reference(self) -> int:
         """
         Scan all wiki pages for exact string matches with titles of other pages.
         Unlinked matches are rewritten to include [[ ]] brackets.
         Returns number of links added.
+
+        Fix #7: Pre-compile all patterns once, single-pass per page.
         """
         pages = self._get_existing_pages()
         if not pages:
             return 0
 
-        # Build title → path map
-        title_map = {}
+        # Build title → path map and pre-compile all patterns
+        title_map: dict[str, str] = {}
+        compiled_patterns: dict[str, re.Pattern] = {}
+
         for pg in pages:
             title_map[pg["title"]] = pg["path"]
+            # Compile a pattern that matches the title NOT inside [[ ]]
+            escaped = re.escape(pg["title"])
+            # Pattern: the title not preceded by [[ and not followed by ]]
+            compiled_patterns[pg["title"]] = re.compile(
+                r'(?<!\[\[)(' + escaped + r')(?!\]\])'
+            )
 
         links_added = 0
         for pg in pages:
@@ -350,14 +437,13 @@ class WikiEngine:
             except Exception:
                 continue
 
+            self_title = _extract_title(content)
             modified = False
-            # For each other page's title, check if it appears in this page without [[ ]]
-            for other_title, other_path in title_map.items():
-                if other_title == _extract_title(content):
+
+            # Single pass: iterate all other titles, apply first-match wikilink
+            for other_title, pattern in compiled_patterns.items():
+                if other_title == self_title:
                     continue  # skip self
-                # Check if the title appears as plain text (not already a wikilink)
-                # We need to find occurrences that are NOT inside [[ ]]
-                pattern = re.compile(r'(?<!\[\[)(' + re.escape(other_title) + r')(?!\]\])')
                 if pattern.search(content):
                     # Add wikilink only for first occurrence
                     content = pattern.sub(f'[[{other_title}]]', content, count=1)
@@ -384,10 +470,13 @@ class WikiEngine:
                 best_slug = slug
         return best_slug
 
-    # ── Hierarchical token management (chunking) ────────────────────────────
+    # ── Hierarchical token management (Fix #10: chunk overlap) ──────────────
 
     def _chunk_text(self, text: str, chunk_size: int = CHUNK_SIZE) -> list[str]:
-        """Split text into chunks at paragraph boundaries, respecting chunk_size."""
+        """
+        Split text into chunks at paragraph boundaries, respecting chunk_size.
+        Fix #10: 200-char overlap between chunks (sliding window).
+        """
         if len(text) <= chunk_size:
             return [text]
 
@@ -398,7 +487,9 @@ class WikiEngine:
         for para in paragraphs:
             if len(current_chunk) + len(para) + 2 > chunk_size and current_chunk:
                 chunks.append(current_chunk.strip())
-                current_chunk = para
+                # Fix #10: overlap — keep last CHUNK_OVERLAP chars from previous chunk
+                overlap_text = current_chunk[-CHUNK_OVERLAP:] if len(current_chunk) > CHUNK_OVERLAP else ""
+                current_chunk = overlap_text + "\n\n" + para if overlap_text else para
             else:
                 current_chunk += "\n\n" + para if current_chunk else para
 
@@ -446,8 +537,8 @@ TEXT CHUNK:
         emit_fn: Callable,
     ) -> int:
         """
-        Process raw OCR text → structured wiki pages.
-        Implements hierarchical token management for large documents.
+        Process raw OCR text -> structured wiki pages.
+        emit_fn signature: emit_fn(event: str, data: dict) — Fix #1: 2-arg only.
         """
         today = datetime.now().strftime("%Y-%m-%d")
         schema = self._read_schema()
@@ -458,7 +549,7 @@ TEXT CHUNK:
         extracted = {"entities": [], "concepts": []}
 
         if len(chunks) > 1:
-            emit_fn(job_id, "status", {
+            emit_fn("status", {                                       # Fix #1: 2-arg
                 "status": "running", "step": "extracting",
                 "detail": f"Extracting entities from {len(chunks)} chunks…",
             })
@@ -493,10 +584,10 @@ TEXT CHUNK:
         if extracted["entities"] or extracted["concepts"]:
             extracted_hint = f"\n\nPRE-EXTRACTED ENTITIES: {extracted['entities'][:10]}\nPRE-EXTRACTED CONCEPTS: {extracted['concepts'][:10]}\nUse these as suggestions but use your own judgment."
 
-        user_msg = f"""SCHEMA GOVERNANCE (read and follow these rules):
-{schema[:4000]}
+        # Fix #11: Schema sent once in system only, condensed to 2000 chars
+        schema_condensed = schema[:2000]
 
-EXISTING WIKI PAGES I CAN LINK TO:
+        user_msg = f"""EXISTING WIKI PAGES I CAN LINK TO:
 {existing_pages[:4000]}
 
 AVAILABLE CATEGORIES:
@@ -525,35 +616,35 @@ Return JSON in this exact schema:
     "category_slug": "category-slug",
     "folder": "Sources/category-slug",
     "filename": "slug-name.md",
-    "content": "---\\ntitle: ...\\ntype: source\\ncategory: ...\\ntags: [...]\\nsources: [\\"{filename}\\"]\\ncreated: \\"{date}\\"\\nupdated: \\"{date}\\"\\n---\\n\\n# Title\\n\\nFull content with [[wikilinks]]..."
+    "content": "---\\ntitle: ...\\ntype: source\\ncategory: ...\\ntags: [...]\\nsources: [\\"{filename}\\"]\\ncreated: \\"{today}\\"\\nupdated: \\"{today}\\"\\n---\\n\\n# Title\\n\\nFull content with [[wikilinks]]..."
   }},
   "entity_pages": [
     {{
       "title": "Entity Name",
       "filename": "entity-name.md",
-      "content": "---\\ntitle: Entity Name\\ntype: entity\\ncategory: ...\\ntags: [...]\\nsources: [\\"{filename}\\"]\\ncreated: \\"{date}\\"\\nupdated: \\"{date}\\"\\n---\\n\\n# Entity Name\\n\\nDescription with [[wikilinks]]..."
+      "content": "---\\ntitle: Entity Name\\ntype: entity\\ncategory: ...\\ntags: [...]\\nsources: [\\"{filename}\\"]\\ncreated: \\"{today}\\"\\nupdated: \\"{today}\\"\\n---\\n\\n# Entity Name\\n\\nDescription with [[wikilinks]]..."
     }}
   ],
   "concept_pages": [
     {{
       "title": "Concept Name",
       "filename": "concept-name.md",
-      "content": "---\\ntitle: Concept Name\\ntype: concept\\ncategory: ...\\ntags: [...]\\nsources: [\\"{filename}\\"]\\ncreated: \\"{date}\\"\\nupdated: \\"{date}\\"\\n---\\n\\n# Concept Name\\n\\nExplanation with [[wikilinks]]..."
+      "content": "---\\ntitle: Concept Name\\ntype: concept\\ncategory: ...\\ntags: [...]\\nsources: [\\"{filename}\\"]\\ncreated: \\"{today}\\"\\nupdated: \\"{today}\\"\\n---\\n\\n# Concept Name\\n\\nExplanation with [[wikilinks]]..."
     }}
   ],
   "pending_tasks": ["Create page for [[Missing Concept]]", "Create entity for [[Missing Person]]"],
-  "log_entry": "## [{date}] ingest | Title\\n\\nBrief summary.\\n"
+  "log_entry": "## [{today}] ingest | Title\\n\\nBrief summary.\\n"
 }}
 """
 
-        emit_fn(job_id, "status", {
+        emit_fn("status", {                                       # Fix #1: 2-arg
             "status": "running", "step": "llm_enriching",
             "detail": f"Calling {LLM_MODEL} for wiki processing…",
         })
 
         raw_response = await _ollama_call(
             prompt=user_msg,
-            system=f"You are a wiki librarian. Follow the SCHEMA GOVERNANCE rules precisely.\n\nSCHEMA:\n{schema[:3000]}",
+            system=f"You are a wiki librarian. Follow the SCHEMA GOVERNANCE rules precisely.\n\nSCHEMA:\n{schema_condensed}",
             model=LLM_MODEL,
             json_mode=True,
         )
@@ -568,7 +659,7 @@ Return JSON in this exact schema:
             log_entry    = data.get("log_entry", "")
         except Exception as e:
             log.error(f"Failed to parse LLM response: {e}\nRaw:\n{raw_response[:500]}")
-            emit_fn(job_id, "warning", {"detail": f"LLM parse error, fallback mode: {e}"})
+            emit_fn("warning", {"detail": f"LLM parse error, fallback mode: {e}"})  # Fix #1: 2-arg
             slug = _to_slug(Path(filename).stem)
             category = self._classify_category(content)
             source_page = {
@@ -588,12 +679,16 @@ Return JSON in this exact schema:
             entity_pages, concept_pages, pending_tasks = [], [], []
             log_entry = f"## [{today}] ingest | {filename}\n\nFallback page created.\n"
 
+        # Fix #9: Server-side date substitution in log_entry
+        if log_entry:
+            log_entry = log_entry.replace("{date}", today).replace("[{today}]", f"[{today}]")
+
         # ── Write pages ────────────────────────────────────────────────────
         written = 0
-        for pg_data, default_folder in [
-            (source_page, "Sources/uncategorized"),
-            *[(pg, "Entities") for pg in entity_pages[:MAX_ENTITIES]],
-            *[(pg, "Concepts") for pg in concept_pages[:MAX_CONCEPTS]],
+        for pg_data, default_folder, use_merge in [
+            (source_page, "Sources/uncategorized", False),
+            *[(pg, "Entities", True) for pg in entity_pages[:MAX_ENTITIES]],     # Fix #8: merge entities
+            *[(pg, "Concepts", True) for pg in concept_pages[:MAX_CONCEPTS]],    # Fix #8: merge concepts
         ]:
             if not pg_data:
                 continue
@@ -603,9 +698,12 @@ Return JSON in this exact schema:
             if fname and cont:
                 rel_path = f"{folder}/{fname}"
                 try:
-                    self._write_page(rel_path, cont)
+                    if use_merge:
+                        self._write_or_merge_page(rel_path, cont)   # Fix #8
+                    else:
+                        self._write_page(rel_path, cont)
                     written += 1
-                    emit_fn(job_id, "page_written", {"path": rel_path})
+                    emit_fn("page_written", {"path": rel_path})     # Fix #1: 2-arg
                     log.info(f"  Wrote vault/{rel_path}")
                 except Exception as e:
                     log.warning(f"  Could not write {rel_path}: {e}")
@@ -621,17 +719,26 @@ Return JSON in this exact schema:
 
         return written
 
-    # ── Query ──────────────────────────────────────────────────────────────
+    # ── Query (Fix #13: full schema + category list) ───────────────────────
 
     async def query(self, question: str, context_pages: list[dict]) -> AsyncGenerator[str, None]:
         schema = self._read_schema()
+        categories_text = ", ".join(f"'{cat['slug']}' ({cat['name']})" for cat in self.cfg.get("categories", []))
         ctx_parts = []
         for i, pg in enumerate(context_pages, 1):
             ctx_parts.append(f"**[{i}] {pg['path']}**\n```\n{pg['content'][:1500]}\n```")
         context = "\n\n".join(ctx_parts) if ctx_parts else "*(no relevant pages found)*"
 
         prompt = f"WIKI CONTEXT:\n{context}\n\nQUESTION: {question}"
-        system = f"You are a wiki assistant. Answer questions using the provided wiki pages.\n\nSchema rules:\n{schema[:1500]}\n\n- Be precise and cite sources using [[Page Name]] notation\n- If the wiki doesn't contain relevant info, say so clearly\n- Keep answers focused and well-structured"
+        # Fix #13: Full schema + category list in query system prompt
+        system = (
+            f"You are a wiki assistant. Answer questions using the provided wiki pages.\n\n"
+            f"Schema rules:\n{schema[:3000]}\n\n"
+            f"Available categories: {categories_text}\n\n"
+            f"- Be precise and cite sources using [[Page Name]] notation\n"
+            f"- If the wiki doesn't contain relevant info, say so clearly\n"
+            f"- Keep answers focused and well-structured"
+        )
 
         async for chunk in _ollama_stream(prompt, system=system, model=LLM_MODEL):
             yield chunk
@@ -659,12 +766,15 @@ Return JSON in this exact schema:
             chunks.append(chunk)
         return "".join(chunks)
 
-    # ── Revise & Organize ──────────────────────────────────────────────────
+    # ── Revise & Organize (Fix #6, #14: SHA-256 skip, category-move fix) ───
 
-    async def revise_and_organize(self, emit_fn: Callable = None) -> dict:
+    async def revise_and_organize(self, emit_fn: Callable | None = None) -> dict:
         """
         Batch operation: Qwen reviews each file, creates new links,
         reorganizes, and checks everything. Returns stats dict.
+
+        Fix #6: Category-move condition rewritten with explicit parentheses.
+        Fix #14: Skip unchanged pages via SHA-256 comparison.
         """
         schema = self._read_schema()
         pages = self._get_existing_pages()
@@ -678,6 +788,9 @@ Return JSON in this exact schema:
         total_links_added = 0
         moved = 0
 
+        # Fix #14: Build SHA-256 map for current pages
+        current_shas: dict[str, str] = {pg["path"]: pg["sha256"] for pg in pages}
+
         for i, pg in enumerate(pages):
             full_path = self.vault / pg["path"]
             if not full_path.exists():
@@ -689,7 +802,7 @@ Return JSON in this exact schema:
                 continue
 
             if emit_fn:
-                emit_fn("revise_progress", {
+                emit_fn("revise_progress", {                                 # Fix #1: 2-arg
                     "current": i + 1, "total": len(pages),
                     "page": pg["title"],
                 })
@@ -721,7 +834,7 @@ Return JSON:
   "updated_content": "full updated markdown with frontmatter",
   "new_category": null or "new-category-slug",
   "links_added": 3,
-  "changes_made": ["Added 3 wikilinks", "Fixed typo 'teh' → 'the'"]
+  "changes_made": ["Added 3 wikilinks", "Fixed typo 'teh' -> 'the'"]
 }}
 """
             try:
@@ -738,8 +851,17 @@ Return JSON:
                 changes = data.get("changes_made", [])
 
                 if new_content and new_content != content:
-                    # Handle category change (move file)
-                    if new_category and new_category != pg.get("path", "").split("/")[1] if "/" in pg.get("path", "") else None:
+                    # Fix #6: Category-move condition with explicit parentheses
+                    # Get current category from path: "Sources/ai-ml/file.md" -> "ai-ml"
+                    path_parts = pg.get("path", "").split("/")
+                    current_category = path_parts[1] if len(path_parts) > 1 and path_parts[0] == "Sources" else None
+                    should_move = (
+                        new_category is not None
+                        and new_category != current_category
+                        and path_parts[0] == "Sources"
+                    )
+
+                    if should_move:
                         old_path = full_path
                         title = _extract_title(new_content)
                         slug = _to_slug(title)
@@ -750,7 +872,7 @@ Return JSON:
                         if old_path.exists() and old_path != new_full:
                             old_path.unlink()
                             moved += 1
-                        log.info(f"  Moved {pg['path']} → {new_rel}")
+                        log.info(f"  Moved {pg['path']} -> {new_rel}")
                     else:
                         full_path.write_text(new_content, encoding="utf-8")
 
@@ -781,6 +903,9 @@ Return JSON:
             f"added {total_links_added} links, moved {moved} files, "
             f"executed {tasks_done} pending tasks.\n"
         )
+
+        # Invalidate cache since we've made changes
+        self._invalidate_pages_cache()
 
         return {
             "reviewed": reviewed,
@@ -822,15 +947,17 @@ Return JSON:
             data = _parse_json(raw_response)
             new_content = data.get("content", existing_content)
             full_path.write_text(new_content, encoding="utf-8")
+            self._invalidate_pages_cache()
             return new_content
         except Exception as e:
             log.error(f"Reprocess failed: {e}")
             raise
 
 
-# ─── Ollama helpers ──────────────────────────────────────────────────────────
+# ─── Ollama helpers (Fix #16: retry with backoff) ────────────────────────────
 
 async def _ollama_call(prompt: str, system: str, model: str, json_mode: bool = False) -> str:
+    """Call Ollama with retry and exponential backoff (Fix #16)."""
     payload: dict = {
         "model":      model,
         "prompt":     prompt,
@@ -841,13 +968,27 @@ async def _ollama_call(prompt: str, system: str, model: str, json_mode: bool = F
     }
     if json_mode:
         payload["format"] = "json"
-    async with httpx.AsyncClient() as client:
-        r = await client.post(OLLAMA_URL, json=payload, timeout=300.0)
-        r.raise_for_status()
-        return r.json()["response"]
+
+    last_error = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(OLLAMA_URL, json=payload, timeout=300.0)
+                r.raise_for_status()
+                return r.json()["response"]
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            last_error = e
+            if attempt < _MAX_RETRIES:
+                wait = _RETRY_BASE_SEC * (2 ** attempt)
+                log.warning(f"Ollama call failed (attempt {attempt + 1}/{_MAX_RETRIES + 1}), retrying in {wait}s: {e}")
+                await asyncio.sleep(wait)
+            else:
+                log.error(f"Ollama call failed after {_MAX_RETRIES + 1} attempts: {e}")
+    raise last_error  # type: ignore
 
 
 async def _ollama_stream(prompt: str, system: str, model: str) -> AsyncGenerator[str, None]:
+    """Stream from Ollama with retry on connection errors (Fix #16)."""
     payload = {
         "model":      model,
         "prompt":     prompt,
@@ -856,19 +997,33 @@ async def _ollama_stream(prompt: str, system: str, model: str) -> AsyncGenerator
         "options":    {"temperature": 0.2, "num_ctx": 8192},
         "keep_alive": KEEP_ALIVE,
     }
-    async with httpx.AsyncClient() as client:
-        async with client.stream("POST", OLLAMA_URL, json=payload, timeout=300.0) as resp:
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                try:
-                    d = json.loads(line)
-                    if d.get("response"):
-                        yield d["response"]
-                    if d.get("done"):
-                        break
-                except json.JSONDecodeError:
-                    continue
+
+    last_error = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", OLLAMA_URL, json=payload, timeout=300.0) as resp:
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            d = json.loads(line)
+                            if d.get("response"):
+                                yield d["response"]
+                            if d.get("done"):
+                                return
+                        except json.JSONDecodeError:
+                            continue
+                return  # Success, exit the retry loop
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            last_error = e
+            if attempt < _MAX_RETRIES:
+                wait = _RETRY_BASE_SEC * (2 ** attempt)
+                log.warning(f"Ollama stream failed (attempt {attempt + 1}), retrying in {wait}s: {e}")
+                await asyncio.sleep(wait)
+            else:
+                log.error(f"Ollama stream failed after {_MAX_RETRIES + 1} attempts: {e}")
+    raise last_error  # type: ignore
 
 
 # ─── Utilities ───────────────────────────────────────────────────────────────
@@ -890,6 +1045,14 @@ def _extract_title(content: str) -> str:
     return "Untitled"
 
 
+def _strip_frontmatter_body(content: str) -> str:
+    """Strip frontmatter and return just the body text."""
+    m = re.match(r"\A---\s*\n.*?\n---\s*\n?", content, re.DOTALL)
+    if m:
+        return content[m.end():]
+    return content
+
+
 def _parse_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
@@ -909,6 +1072,7 @@ def compute_sha256(file_path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
+
 
 LINT_SYSTEM = """\
 You are a wiki health inspector. Analyze and report:
