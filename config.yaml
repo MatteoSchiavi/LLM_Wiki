@@ -1,9 +1,11 @@
-# ╔══════════════════════════════════════════════════════╗
-# ║          SECONDO CERVELLO  —  config.yaml            ║
-# ╚══════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════════════╗
+# ║          SECONDO CERVELLO  v2  —  config.yaml               ║
+# ║   The Ultimate Local AI Knowledge Base                       ║
+# ╚══════════════════════════════════════════════════════════════╝
 
-# Where the wiki lives on disk
-vault_dir: "vault"
+# ── Vault ────────────────────────────────────────────────────────────────────
+# This is your Obsidian vault. All wiki pages go here as .md files.
+vault_dir: "D:\\obsidian\\LLM_Wiki"
 
 # Temp dir for uploads (auto-cleaned after processing)
 uploads_tmp: ".tmp_uploads"
@@ -11,20 +13,20 @@ uploads_tmp: ".tmp_uploads"
 # SQLite job state
 db_path: ".state/jobs.db"
 
-# ── Ollama ────────────────────────────────────────────────────────────────────
+# ── Ollama ───────────────────────────────────────────────────────────────────
 ollama_url: "http://localhost:11434"
 
 # Vision model for OCR (requires glm-ocr:latest pulled in Ollama)
+# This model is loaded only during OCR and immediately unloaded after
 ocr_model: "glm-ocr:latest"
 
-# Text model for wiki enrichment and query (qwen2.5:7b recommended for 8GB VRAM)
+# Text model for wiki enrichment and query
 # Alternatives: mistral:7b-instruct, llama3.1:8b, phi4:latest
 llm_model: "qwen2.5:7b-instruct"
 
-# ── OCR ───────────────────────────────────────────────────────────────────────
+# ── OCR ──────────────────────────────────────────────────────────────────────
 ocr:
   # Parallel pages per batch — RTX 3070 Laptop sweet spot: 2
-  # Lower if you get OOM errors
   max_concurrency: 2
 
   # Render resolution — 200 is quality/speed balanced
@@ -34,11 +36,97 @@ ocr:
   # Max pixel dimension sent to LLM (thumbnail)
   max_image_dimension: 1800
 
-# ── Wiki ──────────────────────────────────────────────────────────────────────
+  # Seconds to keep OCR model loaded after use (0 = unload immediately)
+  keep_alive: 0
+
+# ── Wiki ─────────────────────────────────────────────────────────────────────
 wiki:
   # Max characters of source text sent to LLM for enrichment
-  # Larger = better wiki pages, more tokens, slower
-  max_source_chars: 12000
+  max_source_chars: 16000
 
   # Pages to include in query context
   context_pages: 6
+
+  # Whether to auto-create entity pages for important topics
+  auto_create_entities: true
+
+  # Whether to auto-create concept pages for important ideas
+  auto_create_concepts: true
+
+  # Max entity pages to create per source (keeps things focused)
+  max_entity_pages: 3
+
+  # Max concept pages to create per source
+  max_concept_pages: 3
+
+  # Seconds to keep LLM model loaded after use (5 min default for chat)
+  keep_alive: 300
+
+# ── Categories ───────────────────────────────────────────────────────────────
+# These map to subfolders in the vault's Sources/ directory
+categories:
+  - name: "AI & Machine Learning"
+    slug: "ai-ml"
+    keywords: ["machine learning", "deep learning", "neural network", "NLP",
+               "computer vision", "transformer", "LLM", "GPT", "BERT",
+               "artificial intelligence", "reinforcement learning", "GAN",
+               "diffusion model", "RAG", "fine-tuning", "training"]
+
+  - name: "Science & Research"
+    slug: "science"
+    keywords: ["physics", "chemistry", "biology", "mathematics", "quantum",
+               "research", "experiment", "hypothesis", "theorem", "proof",
+               "scientific", "journal", "paper", "study"]
+
+  - name: "Technology"
+    slug: "technology"
+    keywords: ["software", "hardware", "programming", "web", "system",
+               "API", "database", "cloud", "DevOps", "framework",
+               "programming language", "algorithm", "architecture"]
+
+  - name: "Health & Medicine"
+    slug: "health"
+    keywords: ["medical", "medicine", "nutrition", "fitness", "mental health",
+               "clinical", "disease", "treatment", "diagnosis", "therapy",
+               "drug", "pharmaceutical", "surgery", "patient"]
+
+  - name: "Business & Finance"
+    slug: "business"
+    keywords: ["economics", "management", "investing", "startup", "market",
+               "finance", "accounting", "business", "corporate", "strategy",
+               "revenue", "profit", "entrepreneurship"]
+
+  - name: "Philosophy & Psychology"
+    slug: "philosophy"
+    keywords: ["ethics", "consciousness", "behavior", "cognition", "philosophy",
+               "psychology", "mind", "perception", "logic", "metaphysics",
+               "epistemology", "phenomenology"]
+
+  - name: "Arts & Humanities"
+    slug: "arts"
+    keywords: ["history", "literature", "art", "music", "culture", "language",
+               "anthropology", "sociology", "creative", "design"]
+
+  - name: "Personal"
+    slug: "personal"
+    keywords: ["personal", "journal", "diary", "notes", "reflection",
+               "goals", "habits", "learning"]
+
+# ── Search ───────────────────────────────────────────────────────────────────
+search:
+  # BM25 parameters
+  k1: 1.5
+  b: 0.75
+
+  # Minimum query term length
+  min_term_length: 2
+
+  # Maximum snippets per result
+  max_snippets: 3
+
+# ── Server ───────────────────────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: 7337
+  # Health check interval in seconds (reduces Ollama spam)
+  health_check_interval: 60

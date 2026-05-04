@@ -1,22 +1,30 @@
-# 🧠 Secondo Cervello
+# Secondo Cervello v2
 
-**One process. One port. PDF → Wiki → Knowledge Graph.**  
-Local, private, zero cloud. Inspired by [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+**The Ultimate Local AI Knowledge Base.**
+
+Upload PDFs, images, and text files → OCR extracts everything → Qwen organizes it into your Obsidian wiki with wikilinks, categories, and typo fixes. All local, all private, zero cloud.
+
+Inspired by [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
 ```
 http://localhost:7337
       ↑
   FastAPI app
       │
-  ┌───┴────────────────────────────────────────┐
-  │  Upload panel  →  OCR (glm-ocr)            │
-  │                →  Wiki Engine (qwen2.5:7b) │
-  │                →  vault/wiki/*.md           │
-  │                                            │
-  │  Wiki panel    →  browse + wikilinks        │
-  │  Query panel   →  BM25 search + LLM stream │
-  │  Dashboard     →  stats + lint             │
-  └────────────────────────────────────────────┘
+  ┌───┴──────────────────────────────────────────────────┐
+  │  Upload → OCR (glm-ocr, auto-unload)                │
+  │         → Qwen processes raw text:                   │
+  │           · Fixes typos and OCR errors               │
+  │           · Adds [[wikilinks]] to existing pages     │
+  │           · Categorizes into topic folders           │
+  │           · Creates entity & concept pages           │
+  │           · Writes .md files to Obsidian vault       │
+  │                                                      │
+  │  Wiki panel   → browse + wikilink navigation         │
+  │  Chat panel   → BM25 search + streaming LLM          │
+  │  Dashboard    → stats + category breakdown + lint    │
+  │  Settings     → vault path + model config            │
+  └──────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -32,19 +40,24 @@ pip install -r requirements.txt
 ### 2. Pull Ollama models
 
 ```bash
-# OCR (vision) — handles scanned PDFs and handwriting
+# OCR (vision) — handles scanned PDFs, images, handwriting
 ollama pull glm-ocr:latest
 
-# Wiki enrichment + query — RECOMMENDED for RTX 3070 Laptop (8GB VRAM)
+# Wiki enrichment + query — recommended for RTX 3070 Laptop (8GB VRAM)
 ollama pull qwen2.5:7b-instruct
 ```
 
-> **Why qwen2.5:7b?**
-> At q8_0 it fits in ~7.7GB. Outperforms Mistral 7B and Llama 3.1 8B on structured
-> tasks (JSON output, Italian, instruction-following). glm-ocr and qwen2.5 never
-> run in parallel — OCR finishes before the wiki LLM starts — so no VRAM conflict.
+> **Why qwen2.5:7b?** At q8_0 it fits in ~7.7GB. Outperforms Mistral 7B and Llama 3.1 8B on structured tasks (JSON output, instruction-following). glm-ocr and qwen2.5 never run in parallel — OCR finishes first, then its model is unloaded (keep_alive=0), then Qwen loads. No VRAM conflict.
 
-### 3. Run
+### 3. Configure vault path
+
+Edit `config.yaml` and set `vault_dir` to your Obsidian vault:
+
+```yaml
+vault_dir: "D:\\obsidian\\LLM_Wiki"
+```
+
+### 4. Run
 
 ```bash
 python main.py
@@ -53,67 +66,93 @@ python main.py
 
 ---
 
-## How it works (Karpathy 3-layer pattern)
+## How it works
+
+### Pipeline Flow
 
 ```
-vault/
-├── raw/sources/{doc}/          ← immutable originals (never modified)
-│   ├── document.pdf
-│   └── document_raw.md         ← raw OCR output
-│
-└── wiki/                       ← LLM-owned, always evolving
-    ├── index.md                ← catalog of all pages + 1-line summaries
-    ├── log.md                  ← append-only operation log
-    ├── sources/{slug}.md       ← 1 page per ingested document
-    ├── entities/{name}.md      ← real things: people, places, orgs
-    └── concepts/{name}.md      ← ideas: theories, methods, techniques
+File upload (PDF/image/TXT/MD)
+  → OCR (glm-ocr, keep_alive=0)
+      · Renders PDF pages or sends images to vision model
+      · Comprehensive prompt handles text, tables, graphs, infographics, diagrams
+      · Model auto-unloads after OCR completes
+  → Raw markdown saved to vault/attachments/
+  → Qwen loads (qwen2.5:7b-instruct)
+      · Reads raw OCR output + existing wiki page list
+      · Fixes typos and OCR errors through context
+      · Adds [[wikilinks]] to existing pages
+      · Categorizes document into topic folder
+      · Creates source page + entity/concept pages
+      · Writes .md files to correct vault folders
+      · Updates index.md and log.md
+  → Search index rebuilt automatically
 ```
 
-**Ingest flow:**
-1. Drop PDF in the Upload panel
-2. glm-ocr converts pages to Markdown (parallel, semaphore-controlled)
-3. qwen2.5:7b reads the raw text, generates structured wiki pages as JSON
-4. Pages are written to `vault/wiki/`, index.md and log.md updated
-5. BM25 search index rebuilt automatically
+### Vault Structure (Obsidian-compatible)
 
-**Query flow:**
-1. Your question is tokenized
-2. BM25 finds top-6 relevant wiki pages (sub-millisecond)
-3. Pages are sent to qwen2.5:7b as context
-4. Answer streams back to the UI
+```
+D:\obsidian\LLM_Wiki/
+├── Sources/                    ← Source documents organized by category
+│   ├── ai-ml/                  ← AI & Machine Learning
+│   ├── science/                ← Science & Research
+│   ├── technology/             ← Technology
+│   ├── health/                 ← Health & Medicine
+│   ├── business/               ← Business & Finance
+│   ├── philosophy/             ← Philosophy & Psychology
+│   ├── arts/                   ← Arts & Humanities
+│   └── personal/               ← Personal
+├── Entities/                   ← People, organizations, tools, products
+├── Concepts/                   ← Ideas, theories, methods, techniques
+├── MOC/                        ← Maps of Content (hub pages)
+├── attachments/                ← Original files + raw OCR output
+├── index.md                    ← Master catalog (auto-updated)
+├── log.md                      ← Append-only operation log
+└── AGENTS.md                   ← AI schema governance
+```
+
+### Query Flow
+
+1. Your question is tokenized (supports English + CJK)
+2. BM25 finds top-k relevant wiki pages (sub-millisecond, title-boosted)
+3. Pages are sent to qwen2.5 as context
+4. Answer streams back with [[citations]]
+5. Optionally re-process pages to improve them
 
 ---
 
-## Tuning
+## Key improvements over v1
 
-All parameters in `config.yaml`. The most important ones:
+| Feature | v1 | v2 |
+|---------|----|----|
+| Vault format | JSON intermediary | Pure .md files in Obsidian vault |
+| Vault location | Local `vault/` subfolder | Configurable Obsidian vault path |
+| OCR model management | Stays loaded | Auto-unloads after OCR (keep_alive=0) |
+| OCR prompt | Basic text extraction | Comprehensive: tables, graphs, infographics, diagrams, equations |
+| Image support | PDF only | PDF + PNG, JPG, GIF, BMP, TIFF, WEBP |
+| Wikilinks | Random | Qwen reads existing pages to create accurate links |
+| Categorization | All in `sources/` | Automatic categorization into topic folders |
+| Typo correction | None | Context-based OCR error fixing |
+| Search | English only | English + CJK tokenization, title boosting |
+| Health check | 30s polling (spam) | 60s polling |
+| UI | Top tabs | Sidebar navigation, modern design |
+| Reprocess | None | Re-run Qwen on existing pages |
+
+---
+
+## Config reference
+
+All parameters in `config.yaml`. Key ones:
 
 | Parameter | Default | Change if… |
 |-----------|---------|------------|
+| `vault_dir` | `D:\obsidian\LLM_Wiki` | Point to your Obsidian vault |
 | `ocr.max_concurrency` | 2 | OOM errors → lower to 1 |
 | `ocr.dpi` | 200 | Bad quality → raise to 300 |
-| `wiki.max_source_chars` | 12000 | Want richer pages → raise to 20000 |
-| `llm_model` | qwen2.5:7b-instruct | Try `phi4:latest` for faster responses |
-
----
-
-## Project structure
-
-```
-secondo_cervello/
-├── main.py           ← FastAPI app: routes, SSE, pipeline orchestration
-├── ocr.py            ← Async PDF → Markdown via glm-ocr
-├── wiki.py           ← Karpathy wiki engine: ingest, query, lint
-├── search.py         ← Pure-Python BM25 over wiki/*.md
-├── config_loader.py  ← YAML config with defaults
-├── config.yaml       ← All tunable parameters
-├── requirements.txt
-├── templates/
-│   └── index.html    ← Full single-page UI (upload, queue, wiki, query, dash)
-└── vault/            ← Created on first run
-    ├── raw/sources/
-    └── wiki/
-```
+| `ocr.keep_alive` | 0 | Keep OCR model loaded → increase |
+| `wiki.max_source_chars` | 16000 | Richer pages → raise to 20000 |
+| `wiki.auto_create_entities` | true | Don't want entity pages → false |
+| `wiki.auto_create_concepts` | true | Don't want concept pages → false |
+| `llm_model` | qwen2.5:7b-instruct | Try `phi4:latest` for speed |
 
 ---
 
@@ -121,24 +160,47 @@ secondo_cervello/
 
 | Format | Processing |
 |--------|-----------|
-| `.pdf` | Full OCR via glm-ocr (vision model) |
-| `.md`  | Direct ingest (no OCR needed) |
-| `.txt` | Direct ingest (no OCR needed) |
+| `.pdf` | Full OCR via glm-ocr (vision model), parallel pages |
+| `.png`, `.jpg`, etc. | Direct OCR via glm-ocr |
+| `.md` | Direct ingest (Qwen still adds links + categorizes) |
+| `.txt` | Direct ingest (Qwen still adds links + categorizes) |
+
+---
+
+## Project structure
+
+```
+secondo-cervello/
+├── main.py           ← FastAPI app: routes, SSE, pipeline orchestration
+├── ocr.py            ← Async PDF/Image → Markdown via glm-ocr
+├── wiki.py           ← Wiki engine: ingest, query, lint, reprocess
+├── search.py         ← BM25 with CJK support + title boosting
+├── config_loader.py  ← YAML config with deep-merge defaults
+├── config.yaml       ← All tunable parameters
+├── requirements.txt
+├── templates/
+│   └── index.html    ← Full single-page UI
+└── D:\obsidian\LLM_Wiki/  ← Obsidian vault (created on first run)
+```
 
 ---
 
 ## Troubleshooting
 
-**Ollama not connecting:**  
+**Ollama not connecting:**
 Make sure Ollama is running: `ollama serve`
 
-**Out of memory during OCR:**  
+**Out of memory during OCR:**
 Set `ocr.max_concurrency: 1` in `config.yaml`
 
-**LLM produces bad JSON:**  
-This is rare with qwen2.5:7b. If it happens, a fallback minimal page is created
-automatically. The raw OCR markdown is always saved to `vault/raw/sources/`.
+**LLM produces bad JSON:**
+A fallback minimal page is created automatically. The raw OCR markdown is always saved to `attachments/`.
 
-**Wiki is empty after upload:**  
-Check `cervello.log` for errors. The raw OCR output is always preserved even if
-the LLM enrichment step fails.
+**Wiki is empty after upload:**
+Check `cervello.log` for errors. Raw OCR output is preserved even if enrichment fails.
+
+**Want to re-process a page:**
+Open the page in the Wiki panel and click "Re-process" to run Qwen on it again with updated context.
+
+**Add a new category:**
+Add it to the `categories` list in `config.yaml` and restart the server.
