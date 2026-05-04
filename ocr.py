@@ -1,8 +1,17 @@
 """
 OCR engine: PDF/Image → Markdown via vision model on Ollama.
-Async, parallel pages, VRAM-aware semaphore, immediate model unload.
+Audio transcription via local Whisper model (faster_whisper).
 
-Supports: PDF, PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP
+VRAM management:
+  - During OCR page iteration: keep_alive="5m" (model stays loaded during the loop)
+  - After all OCR pages complete: explicitly unload the OCR model by POSTing to
+    ollama /api/generate with {"model": OCR_MODEL, "keep_alive": 0}
+  - This ensures the OCR model is fully evicted from VRAM before Qwen loads
+
+Supports:
+  PDF:  .pdf
+  Images: .png, .jpg, .jpeg, .gif, .bmp, .tiff, .webp
+  Audio: .mp3, .wav, .m4a, .flac, .ogg, .webm
 """
 
 import asyncio
@@ -18,14 +27,25 @@ from config_loader import CFG
 
 log = logging.getLogger("ocr")
 
-OLLAMA_URL   = CFG["ollama_url"] + "/api/generate"
-OCR_MODEL    = CFG["ocr_model"]
-MAX_WORKERS  = CFG["ocr"]["max_concurrency"]
-DPI          = CFG["ocr"]["dpi"]
-MAX_DIM      = CFG["ocr"]["max_image_dimension"]
-KEEP_ALIVE   = CFG["ocr"]["keep_alive"]
+# ─── Config ─────────────────────────────────────────────────────────────────────
 
-# ─── OCR Prompt ──────────────────────────────────────────────────────────────
+OLLAMA_URL  = CFG["ollama_url"] + "/api/generate"
+OCR_MODEL   = CFG["ocr_model"]
+MAX_WORKERS = CFG["ocr"]["max_concurrency"]
+DPI         = CFG["ocr"]["dpi"]
+MAX_DIM     = CFG["ocr"]["max_image_dimension"]
+
+# keep_alive during the OCR loop: keep the model loaded for 5 minutes so
+# successive pages don't trigger a cold load each time
+KEEP_ALIVE_DURING = "5m"
+
+# ─── Supported extensions ───────────────────────────────────────────────────────
+
+PDF_EXTENSIONS    = {".pdf"}
+IMAGE_EXTENSIONS  = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp"}
+AUDIO_EXTENSIONS  = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".webm"}
+
+# ─── OCR Prompt (PDF pages) ────────────────────────────────────────────────────
 
 OCR_PROMPT = """\
 You are a precise document OCR and transcription engine. Your task is to convert this document page into clean, comprehensive Markdown.
@@ -109,7 +129,8 @@ UNCLEAR SECTIONS:
 REMEMBER: Your goal is to create a Markdown document that preserves ALL information from the original page. A reader should be able to understand the complete content without ever seeing the original document.
 """
 
-# Simplified prompt for image files (not PDF pages) — more conversational
+# ─── OCR Prompt (image files) ──────────────────────────────────────────────────
+
 IMAGE_OCR_PROMPT = """\
 You are a precise image transcription engine. Extract ALL content from this image into clean Markdown.
 
@@ -126,6 +147,32 @@ Follow the same rules as the main OCR prompt:
 Be thorough. Every detail matters.
 """
 
+
+# ─── VRAM management ───────────────────────────────────────────────────────────
+
+async def unload_ocr_model() -> None:
+    """
+    Explicitly unload the OCR model from VRAM by sending a POST to Ollama's
+    /api/generate endpoint with keep_alive=0.  This ensures the model is
+    fully evicted from GPU memory so the next model (e.g. Qwen) can load
+    without competing for VRAM.
+    """
+    log.info(f"Unloading OCR model '{OCR_MODEL}' from VRAM (keep_alive=0)")
+    try:
+        async with httpx.AsyncClient() as client:
+            payload = {
+                "model":      OCR_MODEL,
+                "prompt":     "",
+                "keep_alive": 0,
+            }
+            r = await client.post(OLLAMA_URL, json=payload, timeout=30.0)
+            r.raise_for_status()
+            log.info("OCR model unloaded successfully")
+    except Exception as e:
+        log.warning(f"Failed to unload OCR model (non-fatal): {e}")
+
+
+# ─── PDF rendering helpers ─────────────────────────────────────────────────────
 
 def _render_pdf_page(page, dpi: int, max_dim: int) -> str:
     """Render a PDF page to base64 PNG. CPU-bound, runs in thread pool."""
@@ -150,10 +197,11 @@ def _load_image_file(path: Path, max_dim: int) -> str:
         img = img.convert("RGB")
     img.thumbnail((max_dim, max_dim), Image.LANCZOS)
     buf = io.BytesIO()
-    fmt = "PNG"
-    img.save(buf, format=fmt, optimize=True)
+    img.save(buf, format="PNG", optimize=True)
     return base64.b64encode(buf.getvalue()).decode()
 
+
+# ─── Core OCR call ─────────────────────────────────────────────────────────────
 
 async def _ocr_image(
     client: httpx.AsyncClient,
@@ -162,7 +210,10 @@ async def _ocr_image(
     sem: asyncio.Semaphore,
     prompt: str = OCR_PROMPT,
 ) -> tuple[int, str]:
-    """Send a single image to the OCR model and return the markdown."""
+    """
+    Send a single image to the OCR model and return the markdown.
+    Uses keep_alive="5m" so the model stays loaded during the page loop.
+    """
     async with sem:
         payload = {
             "model":      OCR_MODEL,
@@ -170,7 +221,7 @@ async def _ocr_image(
             "images":     [b64],
             "stream":     False,
             "options":    {"temperature": 0.0},
-            "keep_alive": KEEP_ALIVE,
+            "keep_alive": KEEP_ALIVE_DURING,
         }
         try:
             r = await client.post(OLLAMA_URL, json=payload, timeout=180.0)
@@ -181,6 +232,8 @@ async def _ocr_image(
             return page_num, f"> **Page {page_num} OCR failed:** `{e}`"
 
 
+# ─── Public API: PDF OCR ──────────────────────────────────────────────────────
+
 async def ocr_pdf(
     pdf_path: Path,
     progress_cb: Callable[[int, int], None] | None = None,
@@ -188,6 +241,12 @@ async def ocr_pdf(
     """
     Run OCR on a PDF. Returns assembled Markdown string.
     progress_cb(done, total) called after each page.
+
+    VRAM management:
+      - Pages are OCR'd with keep_alive="5m" so the model stays in VRAM
+        across the page loop (avoids repeated cold loads).
+      - After ALL pages are done, the OCR model is explicitly unloaded via
+        unload_ocr_model() to free VRAM before the next pipeline stage.
     """
     import fitz
 
@@ -206,18 +265,25 @@ async def ocr_pdf(
     results: list[tuple[int, str]] = []
     done = 0
 
-    async with httpx.AsyncClient() as client:
-        tasks = [
-            asyncio.create_task(_ocr_image(client, pages_b64[i], i + 1, sem, OCR_PROMPT))
-            for i in range(total)
-        ]
-        for fut in asyncio.as_completed(tasks):
-            page_num, md = await fut
-            results.append((page_num, md))
-            done += 1
-            if progress_cb:
-                progress_cb(done, total)
-            log.info(f"  OCR {done}/{total}")
+    try:
+        async with httpx.AsyncClient() as client:
+            tasks = [
+                asyncio.create_task(
+                    _ocr_image(client, pages_b64[i], i + 1, sem, OCR_PROMPT)
+                )
+                for i in range(total)
+            ]
+            for fut in asyncio.as_completed(tasks):
+                page_num, md = await fut
+                results.append((page_num, md))
+                done += 1
+                if progress_cb:
+                    progress_cb(done, total)
+                log.info(f"  OCR {done}/{total}")
+    finally:
+        # ── Explicitly unload OCR model from VRAM ─────────────────────────
+        # Regardless of success or failure, evict the model so Qwen can load.
+        await unload_ocr_model()
 
     results.sort(key=lambda x: x[0])
 
@@ -228,12 +294,18 @@ async def ocr_pdf(
     return "".join(lines)
 
 
+# ─── Public API: Image OCR ─────────────────────────────────────────────────────
+
 async def ocr_image(
     image_path: Path,
     progress_cb: Callable[[int, int], None] | None = None,
 ) -> str:
     """
     Run OCR on a single image file. Returns Markdown string.
+
+    VRAM management:
+      - Uses keep_alive="5m" during the call.
+      - Unloads the OCR model immediately after to free VRAM.
     """
     log.info(f"OCR: {image_path.name} (image file)")
 
@@ -243,11 +315,128 @@ async def ocr_image(
     b64 = await asyncio.to_thread(_load_image_file, image_path, MAX_DIM)
 
     sem = asyncio.Semaphore(1)
-    async with httpx.AsyncClient() as client:
-        _, md = await _ocr_image(client, b64, 1, sem, IMAGE_OCR_PROMPT)
+    try:
+        async with httpx.AsyncClient() as client:
+            _, md = await _ocr_image(client, b64, 1, sem, IMAGE_OCR_PROMPT)
+    finally:
+        # ── Explicitly unload OCR model from VRAM ─────────────────────────
+        await unload_ocr_model()
 
     if progress_cb:
         progress_cb(1, 1)
 
     title = image_path.stem.replace("_", " ")
     return f"# {title}\n\n{md}\n"
+
+
+# ─── Public API: Audio transcription ──────────────────────────────────────────
+
+def _detect_device() -> str:
+    """Return 'cuda' if a CUDA-capable GPU is available, else 'cpu'."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            log.info("CUDA detected — using GPU for Whisper transcription")
+            return "cuda"
+    except ImportError:
+        pass
+    log.info("No CUDA detected — using CPU for Whisper transcription")
+    return "cpu"
+
+
+def _transcribe_sync(audio_path: Path) -> str:
+    """
+    Synchronous transcription using faster_whisper. Runs in a thread pool
+    so it doesn't block the event loop.
+    """
+    from faster_whisper import WhisperModel
+
+    device = _detect_device()
+    compute_type = "float16" if device == "cuda" else "int8"
+
+    log.info(f"Loading Whisper model (base, device={device}, compute_type={compute_type})")
+    model = WhisperModel("base", device=device, compute_type=compute_type)
+
+    log.info(f"Transcribing: {audio_path.name}")
+    segments, info = model.transcribe(
+        str(audio_path),
+        beam_size=5,
+    )
+
+    language = info.language
+    language_probability = info.language_probability
+    log.info(
+        f"Detected language: {language} "
+        f"(probability: {language_probability:.2%})"
+    )
+
+    # Build formatted transcript with timestamps
+    transcript_parts: list[str] = []
+    for segment in segments:
+        start = segment.start
+        end = segment.end
+        text = segment.text.strip()
+        if text:
+            # Format timestamp as HH:MM:SS.mmm
+            start_fmt = _format_timestamp(start)
+            end_fmt = _format_timestamp(end)
+            transcript_parts.append(f"[{start_fmt} → {end_fmt}]  {text}")
+
+    return language, language_probability, "\n\n".join(transcript_parts)
+
+
+def _format_timestamp(seconds: float) -> str:
+    """Format seconds into HH:MM:SS.mmm string."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    whole_secs = int(secs)
+    millis = int((secs - whole_secs) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{whole_secs:02d}.{millis:03d}"
+
+
+async def transcribe_audio(
+    audio_path: Path,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> str:
+    """
+    Transcribe an audio file using a local Whisper model (faster_whisper).
+    Returns a Markdown-formatted transcript with timestamps.
+
+    Supported formats: MP3, WAV, M4A, FLAC, OGG, WEBM.
+    Language is detected automatically.
+
+    progress_cb(done, total) called: (0,1) at start, (1,1) at end.
+    """
+    suffix = audio_path.suffix.lower()
+    if suffix not in AUDIO_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported audio format: {suffix}. "
+            f"Supported: {', '.join(sorted(AUDIO_EXTENSIONS))}"
+        )
+
+    log.info(f"Transcribe: {audio_path.name}")
+
+    if progress_cb:
+        progress_cb(0, 1)
+
+    # Run the synchronous transcription in a thread pool
+    language, language_probability, transcript = await asyncio.to_thread(
+        _transcribe_sync, audio_path
+    )
+
+    if progress_cb:
+        progress_cb(1, 1)
+
+    # Assemble final Markdown output
+    title = audio_path.stem.replace("_", " ")
+    parts = [
+        f"# {title}\n",
+        f"\n> **Audio transcription** — Language: {language} "
+        f"({language_probability:.0%} confidence)\n",
+        f"> **Source:** `{audio_path.name}`\n",
+        "\n---\n",
+        f"\n{transcript}\n",
+    ]
+
+    return "".join(parts)

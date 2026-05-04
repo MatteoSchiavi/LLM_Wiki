@@ -13,7 +13,6 @@ except ImportError:
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge override into base, preserving nested dicts."""
     r = base.copy()
     for k, v in override.items():
         if k in r and isinstance(r[k], dict) and isinstance(v, dict):
@@ -34,7 +33,7 @@ _DEFAULTS = {
         "max_concurrency":     2,
         "dpi":                 200,
         "max_image_dimension": 1800,
-        "keep_alive":          0,
+        "keep_alive_during":   "5m",
     },
     "wiki": {
         "max_source_chars":     16000,
@@ -43,15 +42,14 @@ _DEFAULTS = {
         "auto_create_concepts": True,
         "max_entity_pages":     3,
         "max_concept_pages":    3,
+        "chunk_size":           14000,
         "keep_alive":           300,
     },
     "categories": [
         {"name": "AI & Machine Learning", "slug": "ai-ml",
-         "keywords": ["machine learning", "deep learning", "neural network",
-                      "LLM", "AI", "transformer", "NLP", "computer vision"]},
+         "keywords": ["machine learning", "deep learning", "neural network", "LLM", "AI"]},
         {"name": "Science & Research", "slug": "science",
-         "keywords": ["physics", "chemistry", "biology", "mathematics",
-                      "research", "experiment"]},
+         "keywords": ["physics", "chemistry", "biology", "mathematics", "research"]},
         {"name": "Technology", "slug": "technology",
          "keywords": ["software", "hardware", "programming", "API", "database"]},
         {"name": "Health & Medicine", "slug": "health",
@@ -68,8 +66,6 @@ _DEFAULTS = {
     "search": {
         "k1": 1.5,
         "b": 0.75,
-        "min_term_length": 2,
-        "max_snippets": 3,
     },
     "server": {
         "host": "0.0.0.0",

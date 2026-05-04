@@ -945,6 +945,108 @@ body {
   #wiki-sidebar { width: 200px; }
   #wiki-page { padding: 20px; }
 }
+/* ── Modern UI/UX Enhancements ── */
+:root {
+  --transition-spring: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --glass-border: rgba(255, 255, 255, 0.08);
+}
+
+/* Custom Webkit Scrollbars */
+::-webkit-scrollbar { 
+  width: 8px; 
+  height: 8px; 
+}
+::-webkit-scrollbar-track { 
+  background: var(--bg); 
+}
+::-webkit-scrollbar-thumb { 
+  background: var(--border3); 
+  border-radius: 4px; 
+  border: 2px solid var(--bg); 
+}
+::-webkit-scrollbar-thumb:hover { 
+  background: var(--muted); 
+}
+
+/* Spring Animation for Panels */
+.panel.active { 
+  animation: panelInSpring 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
+}
+@keyframes panelInSpring {
+  0% { opacity: 0; transform: translateY(15px) scale(0.99); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Glassmorphism Depth */
+#queue-header, #query-header, #page-meta, #web-search-section {
+  background: rgba(16, 16, 23, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--glass-shadow);
+  border: 1px solid var(--glass-border);
+}
+
+/* Tactile Button Feedback */
+#web-search-btn, #chat-send {
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
+  transition: transform var(--transition-spring), box-shadow var(--transition), opacity var(--transition);
+}
+#web-search-btn:hover, #chat-send:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 25px rgba(245, 158, 11, 0.3);
+}
+#web-search-btn:active, #chat-send:active { 
+  transform: translateY(0) scale(0.98); 
+}
+
+/* Drag and Drop Zone Dynamics */
+#drop-zone {
+  transition: border-color var(--transition), background var(--transition), transform var(--transition-spring), box-shadow var(--transition);
+}
+#drop-zone:hover, #drop-zone.drag {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(245, 158, 11, 0.12);
+  border-color: var(--amber2);
+}
+
+/* Sidebar Active State Fluidity */
+.nav-btn { 
+  transition: color var(--transition), background var(--transition), padding-left var(--transition); 
+}
+.nav-btn.active { 
+  padding-left: 16px; 
+  background: linear-gradient(90deg, var(--amber-bg) 0%, transparent 100%); 
+}
+.nav-btn.active::before { 
+  transition: height var(--transition-spring); 
+  height: 80%; 
+}
+
+/* Card & Message Entry Animations */
+.job-card { 
+  animation: cardInSpring 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards; 
+}
+@keyframes cardInSpring {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.msg { 
+  animation: msgInSpring 0.35s cubic-bezier(0.16, 1, 0.3, 1) backwards; 
+}
+@keyframes msgInSpring {
+  0% { opacity: 0; transform: translateY(8px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Input Focus Glow */
+#web-search-input, #chat-input, #wiki-search {
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+#web-search-input:focus, #chat-input:focus, #wiki-search:focus {
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
 </style>
 </head>
 <body>
@@ -1668,7 +1770,34 @@ function debounce(fn, delay) {
     timer = setTimeout(() => fn.apply(this, args), delay);
   };
 }
+document.addEventListener('DOMContentLoaded', () => {
+  const observerOptions = { 
+    root: null, 
+    rootMargin: '0px', 
+    threshold: 0.1 
+  };
+  
+  const staggerObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry, index) => {
+      if (entry.isIntersecting) {
+        // Apply staggered delay based on index
+        entry.target.style.animationDelay = `${index * 0.05}s`;
+        staggerObserver.unobserve(entry.target);
+      }
+    });
+  }, observerOptions);
 
+  // Call this function globally whenever new items are appended to the DOM
+  window.applyStaggerEffect = () => {
+    const unobservedItems = document.querySelectorAll(
+      '.job-card:not([style*="animation-delay"]), .msg:not([style*="animation-delay"])'
+    );
+    unobservedItems.forEach(el => staggerObserver.observe(el));
+  };
+
+  // Initial execution
+  window.applyStaggerEffect();
+});
 // Initial load
 loadJobs();
 </script>

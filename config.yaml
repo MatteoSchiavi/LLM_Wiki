@@ -1,76 +1,56 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║          SECONDO CERVELLO  v2  —  config.yaml               ║
-# ║   The Ultimate Local AI Knowledge Base                       ║
+# ║     SECONDO CERVELLO  v3  —  The Ultimate Knowledge Base    ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 # ── Vault ────────────────────────────────────────────────────────────────────
-# This is your Obsidian vault. All wiki pages go here as .md files.
+# Your Obsidian vault. All wiki pages are .md files here.
 vault_dir: "D:\\obsidian\\LLM_Wiki"
 
 # Temp dir for uploads (auto-cleaned after processing)
 uploads_tmp: ".tmp_uploads"
 
-# SQLite job state
+# SQLite job state (now using aiosqlite)
 db_path: ".state/jobs.db"
 
 # ── Ollama ───────────────────────────────────────────────────────────────────
 ollama_url: "http://localhost:11434"
 
 # Vision model for OCR (requires glm-ocr:latest pulled in Ollama)
-# This model is loaded only during OCR and immediately unloaded after
 ocr_model: "glm-ocr:latest"
 
 # Text model for wiki enrichment and query
-# Alternatives: mistral:7b-instruct, llama3.1:8b, phi4:latest
 llm_model: "qwen2.5:7b-instruct"
 
 # ── OCR ──────────────────────────────────────────────────────────────────────
 ocr:
-  # Parallel pages per batch — RTX 3070 Laptop sweet spot: 2
   max_concurrency: 2
-
-  # Render resolution — 200 is quality/speed balanced
-  # Use 300 for dense handwritten or small-print documents
   dpi: 200
-
-  # Max pixel dimension sent to LLM (thumbnail)
   max_image_dimension: 1800
-
-  # Seconds to keep OCR model loaded after use (0 = unload immediately)
-  keep_alive: 0
+  # keep_alive during OCR loop (model stays loaded across pages)
+  keep_alive_during: "5m"
 
 # ── Wiki ─────────────────────────────────────────────────────────────────────
 wiki:
-  # Max characters of source text sent to LLM for enrichment
   max_source_chars: 16000
-
-  # Pages to include in query context
   context_pages: 6
-
-  # Whether to auto-create entity pages for important topics
   auto_create_entities: true
-
-  # Whether to auto-create concept pages for important ideas
   auto_create_concepts: true
-
-  # Max entity pages to create per source (keeps things focused)
   max_entity_pages: 3
-
-  # Max concept pages to create per source
   max_concept_pages: 3
-
-  # Seconds to keep LLM model loaded after use (5 min default for chat)
+  # Chunk size for hierarchical token management (chars per chunk)
+  chunk_size: 14000
+  # Seconds to keep LLM model loaded after use
   keep_alive: 300
 
 # ── Categories ───────────────────────────────────────────────────────────────
-# These map to subfolders in the vault's Sources/ directory
+# These are created ON DEMAND when a document is categorized into them
 categories:
   - name: "AI & Machine Learning"
     slug: "ai-ml"
     keywords: ["machine learning", "deep learning", "neural network", "NLP",
                "computer vision", "transformer", "LLM", "GPT", "BERT",
                "artificial intelligence", "reinforcement learning", "GAN",
-               "diffusion model", "RAG", "fine-tuning", "training"]
+               "diffusion model", "RAG", "fine-tuning"]
 
   - name: "Science & Research"
     slug: "science"
@@ -87,20 +67,17 @@ categories:
   - name: "Health & Medicine"
     slug: "health"
     keywords: ["medical", "medicine", "nutrition", "fitness", "mental health",
-               "clinical", "disease", "treatment", "diagnosis", "therapy",
-               "drug", "pharmaceutical", "surgery", "patient"]
+               "clinical", "disease", "treatment", "diagnosis", "therapy"]
 
   - name: "Business & Finance"
     slug: "business"
     keywords: ["economics", "management", "investing", "startup", "market",
-               "finance", "accounting", "business", "corporate", "strategy",
-               "revenue", "profit", "entrepreneurship"]
+               "finance", "accounting", "business", "corporate", "strategy"]
 
   - name: "Philosophy & Psychology"
     slug: "philosophy"
     keywords: ["ethics", "consciousness", "behavior", "cognition", "philosophy",
-               "psychology", "mind", "perception", "logic", "metaphysics",
-               "epistemology", "phenomenology"]
+               "psychology", "mind", "perception", "logic", "metaphysics"]
 
   - name: "Arts & Humanities"
     slug: "arts"
@@ -114,19 +91,11 @@ categories:
 
 # ── Search ───────────────────────────────────────────────────────────────────
 search:
-  # BM25 parameters
   k1: 1.5
   b: 0.75
-
-  # Minimum query term length
-  min_term_length: 2
-
-  # Maximum snippets per result
-  max_snippets: 3
 
 # ── Server ───────────────────────────────────────────────────────────────────
 server:
   host: "0.0.0.0"
   port: 7337
-  # Health check interval in seconds (reduces Ollama spam)
   health_check_interval: 60
